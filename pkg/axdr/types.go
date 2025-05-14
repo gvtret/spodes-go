@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+// Array represents an A-XDR Array (homogeneous elements)
+type Array []interface{}
+
+// Structure represents an A-XDR Structure (heterogeneous fields)
+type Structure []interface{}
+
 // Date represents an A-XDR Date (5 bytes) as defined in IEC 62056-6-2 clause 4.1.6.1.
 // It encodes a date with year, month, day, and day of week, supporting special values for undefined or DST transitions.
 type Date struct {
@@ -188,6 +194,13 @@ func (dt DateTime) ToTime() (time.Time, error) {
 		return time.Time{}, errors.New("invalid day of week")
 	}
 	return t, nil
+}
+
+func (dt DateTime) String() string {
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d (offset=%d, DST=%v)",
+		dt.Date.Year, dt.Date.Month, dt.Date.Day,
+		dt.Time.Hour, dt.Time.Minute, dt.Time.Second,
+		dt.Deviation, dt.ClockStatus&0x80 != 0)
 }
 
 // BitString represents an A-XDR BitString (TagBitString) as defined in IEC 62056-6-2.
