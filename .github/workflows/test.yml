@@ -76,18 +76,10 @@ jobs:
       run: |
         go test -v -timeout 10m -race -covermode=atomic -coverprofile=coverage.out ./...
         
-    - name: Install Coveralls CLI
-      run: |
-        go install github.com/mattn/goveralls@latest
-        
     - name: Upload coverage to Coveralls
-      env:
-        COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
-      run: |
-        goveralls -coverprofile=coverage.out \
-          -service=github 
-          -repotoken=$COVERALLS_TOKEN
-          -reponame=$GITHUB_REPOSITORY \
-          -branch=$GITHUB_REF_NAME \
-          -commit=$GITHUB_SHA \
-          -v
+      uses: coverallsapp/github-action@v2
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path-to-lcov: coverage.out
+        flag-name: unittests
+        parallel: false
