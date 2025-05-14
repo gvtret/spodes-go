@@ -84,5 +84,10 @@ jobs:
       env:
         COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
       run: |
-        goveralls -coverprofile=coverage.out -service=github -repotoken=$COVERALLS_TOKEN
-
+        goveralls -coverprofile=coverage.out \
+          -service=github 
+          -repotoken=$COVERALLS_TOKEN
+          -reponame=$GITHUB_REPOSITORY \
+          -branch=$GITHUB_REF_NAME \
+          -commit=$GITHUB_SHA \
+          -v
