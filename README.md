@@ -6,9 +6,9 @@ A Go module implementing the СПОДЭС (Russian standard for energy metering 
 
 ## Structure
 
-- `internal/ber/`: BER encoding/decoding logic.
-- `pkg/spodes/`: COSEM interface classes (`Data`, `Register`) and common interface (`SpodesObject`).
-- `pkg/examples/`: Usage examples for `Data` and `Register`.
+- `pkg/axdr/`: A-XDR encoding/decoding logic and types.
+- `pkg/cosem/`: COSEM interface classes.
+- `examples/`: Usage examples.
 
 ## Installation
 
