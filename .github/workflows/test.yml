@@ -49,9 +49,17 @@ jobs:
           
     - name: Install dependencies with retry
       run: |
-        for i in {1..3}; do
-          go mod download && break || sleep 15
-        done
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          for ($i=1; $i -le 3; $i++) {
+            go mod download
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 15
+          }
+        else
+          for i in {1..3}; do
+            go mod download && break || sleep 15
+          done
+        fi
         go mod tidy
         go mod verify
         
