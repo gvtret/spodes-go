@@ -186,7 +186,7 @@ func (dt DateTime) ToTime() (time.Time, error) {
 	if hundredths == 0xFF {
 		hundredths = 0
 	}
-	totalOffset := 0;
+	totalOffset := 0
 	if dt.Deviation != -32768 {
 		totalOffset = int(dt.Deviation) * 60
 		if dt.ClockStatus&0x80 != 0 {
@@ -212,7 +212,7 @@ func (dt DateTime) String() string {
 	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d (offset=%d, DST=%v)",
 		dt.Date.Year, dt.Date.Month, dt.Date.Day,
 		dt.Time.Hour, dt.Time.Minute, dt.Time.Second,
-		dt.Deviation * 60, dt.ClockStatus&0x80 != 0)
+		dt.Deviation*60, dt.ClockStatus&0x80 != 0)
 }
 
 // BitString represents an A-XDR BitString (TagBitString) as defined in IEC 62056-6-2.

@@ -567,18 +567,18 @@ func TestComplexTypes(t *testing.T) {
 // TestDateTimeRoundTrip tests DateTime conversion to/from time.Time, including undefined values.
 func TestDateTimeRoundTrip(t *testing.T) {
 	tests := []struct {
-		name  string
-		input time.Time
+		name      string
+		input     time.Time
 		expectDST bool
 	}{
 		{
-			name:  "valid_datetime",
-			input: time.Date(2025, 5, 13, 14, 8, 0, 0, time.UTC),
+			name:      "valid_datetime",
+			input:     time.Date(2025, 5, 13, 14, 8, 0, 0, time.UTC),
 			expectDST: false,
 		},
 		{
-			name:  "with_dst",
-			input: time.Date(2025, 5, 13, 14, 8, 0, 0, time.FixedZone("DST", 3600)),
+			name:      "with_dst",
+			input:     time.Date(2025, 5, 13, 14, 8, 0, 0, time.FixedZone("DST", 3600)),
 			expectDST: true,
 		},
 	}
@@ -597,19 +597,19 @@ func TestDateTimeRoundTrip(t *testing.T) {
 			if !tt.input.Equal(roundTripTime) {
 				t.Errorf("Times not equal:\nOriginal: %v\nRoundTrip: %v", tt.input, roundTripTime)
 			}
-			
+
 			// Verify timezone offsets match
 			_, origOffset := tt.input.Zone()
 			_, rtOffset := roundTripTime.Zone()
 			if origOffset != rtOffset {
 				t.Errorf("Time zone offsets differ:\nOriginal: %d\nRoundTrip: %d", origOffset, rtOffset)
 			}
-			
+
 			// Verify DST status matches
 			if tt.input.IsDST() != roundTripTime.IsDST() {
 				t.Errorf("DST mismatch:\nOriginal: %t\nRoundTrip: %t", tt.input.IsDST(), roundTripTime.IsDST())
 			}
-			
+
 			// Additional debug output
 			t.Logf("Original: %v (offset=%d, DST=%t)", tt.input, origOffset, tt.input.IsDST())
 			t.Logf("Encoded: %v", dt)
@@ -617,6 +617,7 @@ func TestDateTimeRoundTrip(t *testing.T) {
 		})
 	}
 }
+
 // TestErrorCases tests error handling for invalid inputs.
 func TestErrorCases(t *testing.T) {
 	tests := []struct {
