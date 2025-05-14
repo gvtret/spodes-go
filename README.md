@@ -1,3 +1,4 @@
+[![Build Status](https://github.com/gvtret/spodes-go/actions/workflows/test.yml/badge.svg)](https://github.com/gvtret/spodes-go/actions)
 ![Coveralls](https://img.shields.io/coverallsCoverage/github/gvtret/spodes-go)
 # Spodes
 
