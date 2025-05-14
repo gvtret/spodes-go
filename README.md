@@ -1,3 +1,4 @@
+![Coveralls](https://img.shields.io/coverallsCoverage/github/gvtret/spodes-go)
 # Spodes
 
 A Go module implementing the СПОДЭС (Russian standard for energy metering data exchange) based on DLMS/COSEM.
