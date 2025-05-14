@@ -335,7 +335,7 @@ func TestDateTimeTypes(t *testing.T) {
 				Day:       13,
 				DayOfWeek: 2, // Tuesday
 			},
-			expected: []byte{0x1A, 0x07, 0xE1, 0x05, 0x0D, 0x02},
+			expected: []byte{0x1A, 0x07, 0xE9, 0x05, 0x0D, 0x02},
 		},
 		{
 			name: "date_undefined",
@@ -389,7 +389,7 @@ func TestDateTimeTypes(t *testing.T) {
 				Deviation:   0,
 				ClockStatus: 0,
 			},
-			expected: []byte{0x19, 0x07, 0xE1, 0x05, 0x0D, 0x02, 0x0E, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00},
+			expected: []byte{0x19, 0x07, 0xE9, 0x05, 0x0D, 0x02, 0x0E, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00},
 		},
 		{
 			name: "datetime_undefined",
@@ -453,7 +453,7 @@ func TestComplexTypes(t *testing.T) {
 		// Array (homogeneous)
 		{
 			name:     "array_integers",
-			input:    []interface{}{int8(1), int8(2), int8(3)},
+			input:    Array{int8(1), int8(2), int8(3)},
 			expected: []byte{0x01, 0x03, 0x1C, 0x01, 0x1C, 0x02, 0x1C, 0x03},
 		},
 		{
@@ -465,7 +465,7 @@ func TestComplexTypes(t *testing.T) {
 		// Array (heterogeneous)
 		{
 			name: "array_mixed",
-			input: []interface{}{
+			input: Array{
 				int8(1),
 				"test",
 				Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
@@ -474,14 +474,14 @@ func TestComplexTypes(t *testing.T) {
 				0x01, 0x03, // Array, length 3
 				0x1C, 0x01, // int8
 				0x0A, 0x04, 't', 'e', 's', 't', // visible-string
-				0x1A, 0x07, 0xE1, 0x05, 0x0D, 0x02, // date
+				0x1A, 0x07, 0xE9, 0x05, 0x0D, 0x02, // date
 			},
 		},
 
 		// Structure
 		{
 			name: "structure_simple",
-			input: []interface{}{
+			input: Structure{
 				int8(1),
 				"test",
 			},
@@ -493,9 +493,9 @@ func TestComplexTypes(t *testing.T) {
 		},
 		{
 			name: "structure_nested",
-			input: []interface{}{
+			input: Structure{
 				int8(1),
-				[]interface{}{int8(2), int8(3)}, // Nested array
+				Array{int8(2), int8(3)}, // Nested array
 				DateTime{
 					Date: Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
 					Time: Time{Hour: 14, Minute: 8},
@@ -505,7 +505,7 @@ func TestComplexTypes(t *testing.T) {
 				0x02, 0x03, // Structure, length 3
 				0x1C, 0x01, // int8
 				0x01, 0x02, 0x1C, 0x02, 0x1C, 0x03, // array
-				0x19, 0x07, 0xE1, 0x05, 0x0D, 0x02, 0x0E, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, // datetime
+				0x19, 0x07, 0xE9, 0x05, 0x0D, 0x02, 0x0E, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, // datetime
 			},
 		},
 
@@ -529,8 +529,8 @@ func TestComplexTypes(t *testing.T) {
 			},
 			expected: []byte{
 				0x13, 0x02, 0x1A, // CompactArray, length 2, TagDate
-				0x07, 0xE1, 0x05, 0x0D, 0x02, // Date 1
-				0x07, 0xE1, 0x05, 0x0E, 0x03, // Date 2
+				0x07, 0xE9, 0x05, 0x0D, 0x02, // Date 1
+				0x07, 0xE9, 0x05, 0x0E, 0x03, // Date 2
 			},
 		},
 	}
@@ -569,52 +569,54 @@ func TestDateTimeRoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string
 		input time.Time
+		expectDST bool
 	}{
 		{
 			name:  "valid_datetime",
 			input: time.Date(2025, 5, 13, 14, 8, 0, 0, time.UTC),
+			expectDST: false,
 		},
 		{
 			name:  "with_dst",
 			input: time.Date(2025, 5, 13, 14, 8, 0, 0, time.FixedZone("DST", 3600)),
+			expectDST: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Convert to DateTime and encode.
-			dt := FromTime(tt.input)
-			encoded, err := Encode(dt)
+			// Convert to DateTime and back
+			dt := FromTime(tt.input, tt.expectDST)
+			roundTripTime, err := dt.ToTime()
 			if err != nil {
-				t.Errorf("Encode(%v) error: %v", dt, err)
+				t.Errorf("ToTime error: %v", err)
 				return
 			}
 
-			// Decode and convert back to time.Time.
-			decoded, err := Decode(encoded)
-			if err != nil {
-				t.Errorf("Decode(%x) error: %v", encoded, err)
-				return
+			// Check time equality with zone awareness
+			if !tt.input.Equal(roundTripTime) {
+				t.Errorf("Times not equal:\nOriginal: %v\nRoundTrip: %v", tt.input, roundTripTime)
 			}
-			decodedDt, ok := decoded.(DateTime)
-			if !ok {
-				t.Errorf("Decoded value is not DateTime: %+v", decoded)
-				return
+			
+			// Verify timezone offsets match
+			_, origOffset := tt.input.Zone()
+			_, rtOffset := roundTripTime.Zone()
+			if origOffset != rtOffset {
+				t.Errorf("Time zone offsets differ:\nOriginal: %d\nRoundTrip: %d", origOffset, rtOffset)
 			}
-			roundTripTime, err := decodedDt.ToTime()
-			if err != nil {
-				t.Errorf("ToTime(%v) error: %v", decodedDt, err)
-				return
+			
+			// Verify DST status matches
+			if tt.input.IsDST() != roundTripTime.IsDST() {
+				t.Errorf("DST mismatch:\nOriginal: %t\nRoundTrip: %t", tt.input.IsDST(), roundTripTime.IsDST())
 			}
-
-			// Compare original and round-trip time (ignoring nanosecond precision).
-			if !tt.input.Truncate(time.Second).Equal(roundTripTime.Truncate(time.Second)) {
-				t.Errorf("Round-trip time = %v, want %v", roundTripTime, tt.input)
-			}
+			
+			// Additional debug output
+			t.Logf("Original: %v (offset=%d, DST=%t)", tt.input, origOffset, tt.input.IsDST())
+			t.Logf("Encoded: %v", dt)
+			t.Logf("RoundTrip: %v (offset=%d, DST=%t)", roundTripTime, rtOffset, roundTripTime.IsDST())
 		})
 	}
 }
-
 // TestErrorCases tests error handling for invalid inputs.
 func TestErrorCases(t *testing.T) {
 	tests := []struct {

@@ -92,7 +92,7 @@ func (dt DateTime) Validate() error {
 
 // FromTime converts a Go time.Time to a DateTime, mapping fields according to IEC 62056-6-2 clause 4.1.6.1.
 // Special values (e.g., 0xFF) are used for undefined or out-of-range fields.
-func FromTime(t time.Time) DateTime {
+func FromTime(t time.Time, isDST bool) DateTime {
 	year := uint16(t.Year())
 	if year > 0xFFFE {
 		year = 0xFFFF
@@ -126,12 +126,15 @@ func FromTime(t time.Time) DateTime {
 		hundredths = 0xFF
 	}
 	_, offset := t.Zone()
-	deviation := int16(-offset / 60)
+	deviation := int16(offset / 60)
+	if isDST {
+		deviation -= 60
+	}
 	if deviation < -720 || deviation > 840 {
 		deviation = -32768
 	}
 	clockStatus := byte(0)
-	if t.IsDST() {
+	if isDST {
 		clockStatus |= 0x80
 	}
 	return DateTime{
@@ -183,13 +186,17 @@ func (dt DateTime) ToTime() (time.Time, error) {
 	if hundredths == 0xFF {
 		hundredths = 0
 	}
-	t := time.Date(year, time.Month(month), day, hour, minute, second, hundredths*1e7, time.UTC)
+	totalOffset := 0;
 	if dt.Deviation != -32768 {
-		t = t.Add(time.Duration(-dt.Deviation) * time.Minute)
+		totalOffset = int(dt.Deviation) * 60
+		if dt.ClockStatus&0x80 != 0 {
+			totalOffset += 3600
+		}
 	}
-	if dt.ClockStatus&0x80 != 0 {
-		t = t.Add(time.Hour)
-	}
+
+	loc := time.FixedZone("", totalOffset)
+	t := time.Date(year, time.Month(month), day, hour, minute, second, hundredths*1e7, loc)
+
 	if dt.Date.DayOfWeek != 0xFF && dt.Date.DayOfWeek != byte(t.Weekday()) && t.Weekday() != 0 {
 		return time.Time{}, errors.New("invalid day of week")
 	}
@@ -200,7 +207,7 @@ func (dt DateTime) String() string {
 	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d (offset=%d, DST=%v)",
 		dt.Date.Year, dt.Date.Month, dt.Date.Day,
 		dt.Time.Hour, dt.Time.Minute, dt.Time.Second,
-		dt.Deviation, dt.ClockStatus&0x80 != 0)
+		dt.Deviation * 60, dt.ClockStatus&0x80 != 0)
 }
 
 // BitString represents an A-XDR BitString (TagBitString) as defined in IEC 62056-6-2.
