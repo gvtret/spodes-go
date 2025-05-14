@@ -85,6 +85,12 @@ func init() {
 		reflect.TypeOf(CompactArray{}): func(buf *bytes.Buffer, v interface{}) error {
 			return encodeCompactArray(buf, v.(CompactArray))
 		},
+		reflect.TypeOf(Array{}): func(buf *bytes.Buffer, v interface{}) error {
+			return encodeArray(buf, reflect.ValueOf(v))
+		},
+		reflect.TypeOf(Structure{}): func(buf *bytes.Buffer, v interface{}) error {
+			return encodeStructure(buf, reflect.ValueOf(v))
+		},
 	}
 }
 
@@ -265,20 +271,21 @@ func encodeDateTime(buf *bytes.Buffer, dt DateTime) error {
 // Each element is encoded with its own type tag.
 // Returns an error if the array length exceeds 255 or if any element fails to encode.
 func encodeArray(buf *bytes.Buffer, v reflect.Value) error {
-	// Write tag and length.
 	buf.WriteByte(byte(TagArray))
+
+	// Получаем длину через reflection
 	length := v.Len()
 	if length > 255 {
 		return fmt.Errorf("array length %d exceeds maximum of 255", length)
 	}
 	buf.WriteByte(byte(length))
-	// Encode each element using range loop for idiomatic Go.
-	for i, val := range v.Slice(0, length).Interface().([]interface{}) {
-		data, err := Encode(val)
-		if err != nil {
-			return fmt.Errorf("failed to encode array element %d: %v", i, err)
+
+	// Используем Index(i) для доступа к элементам через reflection
+	for i := 0; i < length; i++ {
+		elem := v.Index(i)
+		if err := encodeValue(buf, elem.Interface()); err != nil {
+			return fmt.Errorf("array element %d: %v", i, err)
 		}
-		buf.Write(data)
 	}
 	return nil
 }
@@ -287,20 +294,19 @@ func encodeArray(buf *bytes.Buffer, v reflect.Value) error {
 // Each field is encoded with its own type tag.
 // Returns an error if the field count exceeds 255 or if any field fails to encode.
 func encodeStructure(buf *bytes.Buffer, v reflect.Value) error {
-	// Write tag and field count.
 	buf.WriteByte(byte(TagStructure))
-	length := v.NumField()
+
+	length := v.Len()
 	if length > 255 {
 		return fmt.Errorf("structure field count %d exceeds maximum of 255", length)
 	}
 	buf.WriteByte(byte(length))
-	// Encode each field using range loop for idiomatic Go.
+
 	for i := 0; i < length; i++ {
-		data, err := Encode(v.Field(i).Interface())
-		if err != nil {
-			return fmt.Errorf("failed to encode structure field %d: %v", i, err)
+		field := v.Index(i)
+		if err := encodeValue(buf, field.Interface()); err != nil {
+			return fmt.Errorf("structure field %d: %v", i, err)
 		}
-		buf.Write(data)
 	}
 	return nil
 }
