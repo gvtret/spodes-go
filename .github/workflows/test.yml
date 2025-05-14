@@ -45,6 +45,9 @@ jobs:
         go mod tidy
         go mod verify
         
+    - name: Check formatting
+      run: |
+        diff -u <(echo -n) <(gofmt -d .)
     - name: Run tests
       run: |
         go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
@@ -59,7 +62,7 @@ jobs:
       uses: codecov/codecov-action@v3
       
     - name: Upload coverage report artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: coverage-report
         path: coverage.html
