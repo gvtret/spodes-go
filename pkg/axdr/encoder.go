@@ -35,31 +35,31 @@ func init() {
 			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaInteger, func() { buf.WriteByte(byte(v.(int8))) })
 		},
 		reflect.TypeOf(int16(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaLong, func() { binary.Write(buf, binary.BigEndian, v.(int16)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaLong, func() { _ = binary.Write(buf, binary.BigEndian, v.(int16)) })
 		},
 		reflect.TypeOf(uint8(0)): func(buf *bytes.Buffer, v interface{}) error {
 			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaUnsigned, func() { buf.WriteByte(v.(uint8)) })
 		},
 		reflect.TypeOf(uint16(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaLongUnsigned, func() { binary.Write(buf, binary.BigEndian, v.(uint16)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaLongUnsigned, func() { _ = binary.Write(buf, binary.BigEndian, v.(uint16)) })
 		},
 		reflect.TypeOf(int32(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaDoubleLong, func() { binary.Write(buf, binary.BigEndian, v.(int32)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaDoubleLong, func() { _ = binary.Write(buf, binary.BigEndian, v.(int32)) })
 		},
 		reflect.TypeOf(uint32(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaDoubleLongUnsigned, func() { binary.Write(buf, binary.BigEndian, v.(uint32)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagDeltaDoubleLongUnsigned, func() { _ = binary.Write(buf, binary.BigEndian, v.(uint32)) })
 		},
 		reflect.TypeOf(int64(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagLong64, func() { binary.Write(buf, binary.BigEndian, v.(int64)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagLong64, func() { _ = binary.Write(buf, binary.BigEndian, v.(int64)) })
 		},
 		reflect.TypeOf(uint64(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagLong64U, func() { binary.Write(buf, binary.BigEndian, v.(uint64)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagLong64U, func() { _ = binary.Write(buf, binary.BigEndian, v.(uint64)) })
 		},
 		reflect.TypeOf(float32(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagFloat32, func() { binary.Write(buf, binary.BigEndian, v.(float32)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagFloat32, func() { _ = binary.Write(buf, binary.BigEndian, v.(float32)) })
 		},
 		reflect.TypeOf(float64(0)): func(buf *bytes.Buffer, v interface{}) error {
-			return encodePrimitive(buf, reflect.ValueOf(v), TagFloat64, func() { binary.Write(buf, binary.BigEndian, v.(float64)) })
+			return encodePrimitive(buf, reflect.ValueOf(v), TagFloat64, func() { _ = binary.Write(buf, binary.BigEndian, v.(float64)) })
 		},
 		reflect.TypeOf(""): func(buf *bytes.Buffer, v interface{}) error {
 			return encodeString(buf, reflect.ValueOf(v), TagVisibleString)
