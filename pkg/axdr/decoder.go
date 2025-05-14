@@ -366,7 +366,7 @@ func decodeArray(reader *bytes.Reader) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read array length: %v", err)
 	}
-	result := make([]interface{}, length)
+	result := make(Array, length)
 	// Use range loop for idiomatic Go iteration.
 	for i := range result {
 		val, err := decodeValue(reader)
@@ -386,7 +386,7 @@ func decodeStructure(reader *bytes.Reader) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read structure length: %v", err)
 	}
-	result := make([]interface{}, length)
+	result := make(Structure, length)
 	// Use range loop for idiomatic Go iteration.
 	for i := range result {
 		val, err := decodeValue(reader)
