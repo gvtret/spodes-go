@@ -203,6 +203,11 @@ func (dt DateTime) ToTime() (time.Time, error) {
 	return t, nil
 }
 
+// String returns a string representation of the DateTime.
+//
+// The returned string is in the format "YYYY-MM-DD HH:MM:SS (offset=O, DST=D)",
+// where YYYY is the year, MM is the month, DD is the day, HH is the hour, MM is the minute,
+// SS is the second, O is the offset in minutes, and D is a boolean indicating whether daylight saving time is in effect.
 func (dt DateTime) String() string {
 	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d (offset=%d, DST=%v)",
 		dt.Date.Year, dt.Date.Month, dt.Date.Day,

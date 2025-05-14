@@ -12,12 +12,18 @@ type ObisCode struct {
 	sValue string
 }
 
-func CreateObisFromBytes(value [6]byte) (*ObisCode) {
+// CreateObisFromBytes creates an ObisCode from a byte array.
+//
+// The byte array should contain 6 bytes.
+func CreateObisFromBytes(value [6]byte) *ObisCode {
 	oc := &ObisCode{}
 	oc.SetFromBytes(value)
 	return oc
 }
 
+// SetFromBytes sets the ObisCode from a byte array.
+//
+// The byte array should contain 6 bytes.
 func (oc *ObisCode) SetFromBytes(value [6]byte) {
 	var parts []string
 
@@ -29,6 +35,10 @@ func (oc *ObisCode) SetFromBytes(value [6]byte) {
 	oc.sValue = strings.Join(parts, ".")
 }
 
+// CreateObisFromString creates an ObisCode from a string.
+//
+// The string should be in the format "A{delim}B{delim}C{delim}D{delim}E{delim}F", where A, B, C, D, E, and F are integers <= 255.
+// The delimiter can be '.', ':' or '-'.
 func CreateObisFromString(value string) (*ObisCode, error) {
 	oc := &ObisCode{}
 	err := oc.SetFromString(value)
@@ -40,7 +50,10 @@ func CreateObisFromString(value string) (*ObisCode, error) {
 	return oc, nil
 }
 
-// ParseObisCode парсит строку в ObisCode.
+// SetFromString sets the ObisCode from a string.
+//
+// The string should be in the format "A{delim}B{delim}C{delim}D{delim}E{delim}F", where A, B, C, D, E, and F are integers <= 255.
+// The delimiter can be '.', ':' or '-'.
 func (oc *ObisCode) SetFromString(value string) error {
 	value = strings.ReplaceAll(value, " ", "")
 	value = strings.ReplaceAll(value, ":", ".")
