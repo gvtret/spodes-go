@@ -195,7 +195,7 @@ func TestBaseImplInvoke(t *testing.T) {
 				Access:     MethodNoAccess,
 				ParamTypes: []reflect.Type{},
 				ReturnType: reflect.TypeOf(""),
-				Handler: func(params []interface{}) (interface{}, error) { return "", nil },
+				Handler:    func(params []interface{}) (interface{}, error) { return "", nil },
 			},
 		},
 	}

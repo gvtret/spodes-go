@@ -30,8 +30,8 @@ func TestDataNewData(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name:        "ValidObisAndDateTime",
-			obis:        "1.0.0.1.0.255",
+			name: "ValidObisAndDateTime",
+			obis: "1.0.0.1.0.255",
 			value: axdr.DateTime{
 				Date: axdr.Date{
 					Year:      2025,
@@ -63,8 +63,8 @@ func TestDataNewData(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name:        "ValidObisAndCompactArray",
-			obis:        "1.0.99.3.0.255",
+			name: "ValidObisAndCompactArray",
+			obis: "1.0.99.3.0.255",
 			value: axdr.CompactArray{
 				TypeTag: axdr.TagLongUnsigned,
 				Values:  []interface{}{uint16(100), uint16(200)},
@@ -72,8 +72,8 @@ func TestDataNewData(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name:        "ValidObisAndBitString",
-			obis:        "1.0.96.5.0.255",
+			name: "ValidObisAndBitString",
+			obis: "1.0.96.5.0.255",
 			value: axdr.BitString{
 				Bits:   []byte{0xF0}, // 11110000
 				Length: 4,
@@ -81,8 +81,8 @@ func TestDataNewData(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name:        "ValidObisAndBCD",
-			obis:        "1.0.96.6.0.255",
+			name: "ValidObisAndBCD",
+			obis: "1.0.96.6.0.255",
 			value: axdr.BCD{
 				Digits: []byte{1, 2, 3, 4},
 			},
