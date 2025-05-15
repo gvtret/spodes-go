@@ -114,11 +114,10 @@ func (b *BaseImpl) GetAttribute(attributeID byte) (interface{}, error) {
 	if !exists {
 		return nil, ErrAttributeNotSupported
 	}
-
-	if attr.Access == AttributeNoAccess || attr.Access == AttributeWrite {
+	// Allow access for either AttributeRead or AttributeWrite
+	if attr.Access & (AttributeRead) == 0 {
 		return nil, ErrAccessDenied
 	}
-
 	return attr.Value, nil
 }
 
@@ -131,15 +130,12 @@ func (b *BaseImpl) SetAttribute(attributeID byte, value interface{}) error {
 	if !exists {
 		return ErrAttributeNotSupported
 	}
-
-	if attr.Access == AttributeNoAccess || attr.Access == AttributeRead {
+	if attr.Access&AttributeWrite == 0 {
 		return ErrAccessDenied
 	}
-
 	if reflect.TypeOf(value) != attr.Type {
 		return ErrInvalidValueType
 	}
-
 	attr.Value = value
 	b.Attributes[attributeID] = attr
 	return nil
