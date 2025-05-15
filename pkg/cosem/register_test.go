@@ -19,10 +19,10 @@ func TestRegisterNewRegister(t *testing.T) {
 		expectedErr bool
 	}{
 		{
-			name:       "ValidObisAndUint32",
-			obis:       "1.0.1.8.0.255",
-			value:      uint32(12345),
-			scalerUnit: ScalerUnit{Scaler: -2, Unit: UnitWattHour}, // 10^-2 Wh
+			name:        "ValidObisAndUint32",
+			obis:        "1.0.1.8.0.255",
+			value:       uint32(12345),
+			scalerUnit:  ScalerUnit{Scaler: -2, Unit: UnitWattHour}, // 10^-2 Wh
 			expectedErr: false,
 		},
 		{
@@ -36,10 +36,10 @@ func TestRegisterNewRegister(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name:       "ValidObisAndArray",
-			obis:       "1.0.99.1.0.255",
-			value:      axdr.Array{uint32(1), uint32(2)},
-			scalerUnit: ScalerUnit{Scaler: 0, Unit: UnitVolt}, // V
+			name:        "ValidObisAndArray",
+			obis:        "1.0.99.1.0.255",
+			value:       axdr.Array{uint32(1), uint32(2)},
+			scalerUnit:  ScalerUnit{Scaler: 0, Unit: UnitVolt}, // V
 			expectedErr: false,
 		},
 		{
