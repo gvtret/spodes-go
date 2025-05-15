@@ -115,7 +115,7 @@ func (b *BaseImpl) GetAttribute(attributeID byte) (interface{}, error) {
 		return nil, ErrAttributeNotSupported
 	}
 	// Allow access for either AttributeRead or AttributeWrite
-	if attr.Access&(AttributeRead) == 0 {
+	if attr.Access&AttributeRead == 0 {
 		return nil, ErrAccessDenied
 	}
 	return attr.Value, nil
