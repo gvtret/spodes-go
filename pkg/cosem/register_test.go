@@ -19,10 +19,10 @@ func TestRegisterNewRegister(t *testing.T) {
 		expectedErr bool
 	}{
 		{
-			name:        "ValidObisAndUint32",
-			obis:        "1.0.1.8.0.255",
-			value:       uint32(12345),
-			scalerUnit:  ScalerUnit{Scaler: -2, Unit: 27}, // 10^-2 Wh
+			name:       "ValidObisAndUint32",
+			obis:       "1.0.1.8.0.255",
+			value:      uint32(12345),
+			scalerUnit: ScalerUnit{Scaler: -2, Unit: UnitWattHour}, // 10^-2 Wh
 			expectedErr: false,
 		},
 		{
@@ -32,28 +32,28 @@ func TestRegisterNewRegister(t *testing.T) {
 				Date: axdr.Date{Year: 2025, Month: 5, Day: 15, DayOfWeek: 4},
 				Time: axdr.Time{Hour: 7, Minute: 32},
 			},
-			scalerUnit:  ScalerUnit{Scaler: 0, Unit: 255}, // Unitless
+			scalerUnit:  ScalerUnit{Scaler: 0, Unit: UnitCount}, // Unitless
 			expectedErr: false,
 		},
 		{
-			name:        "ValidObisAndArray",
-			obis:        "1.0.99.1.0.255",
-			value:       axdr.Array{uint32(1), uint32(2)},
-			scalerUnit:  ScalerUnit{Scaler: 0, Unit: 30}, // V
+			name:       "ValidObisAndArray",
+			obis:       "1.0.99.1.0.255",
+			value:      axdr.Array{uint32(1), uint32(2)},
+			scalerUnit: ScalerUnit{Scaler: 0, Unit: UnitVolt}, // V
 			expectedErr: false,
 		},
 		{
 			name:        "InvalidObisCode",
 			obis:        "1.2.3",
 			value:       uint32(12345),
-			scalerUnit:  ScalerUnit{Scaler: -2, Unit: 27},
+			scalerUnit:  ScalerUnit{Scaler: -2, Unit: UnitWattHour},
 			expectedErr: true,
 		},
 		{
 			name:        "InvalidValueType",
 			obis:        "1.0.1.8.0.255",
 			value:       complex64(1 + 2i),
-			scalerUnit:  ScalerUnit{Scaler: -2, Unit: 27},
+			scalerUnit:  ScalerUnit{Scaler: -2, Unit: UnitWattHour},
 			expectedErr: true,
 		},
 	}
@@ -99,7 +99,7 @@ func TestRegisterNewRegister(t *testing.T) {
 // TestRegisterGetAttribute verifies attribute retrieval.
 func TestRegisterGetAttribute(t *testing.T) {
 	obis, _ := NewObisCodeFromString("1.0.1.8.0.255")
-	scalerUnit := ScalerUnit{Scaler: -2, Unit: 27} // Wh
+	scalerUnit := ScalerUnit{Scaler: -2, Unit: UnitWattHour} // Wh
 	register, _ := NewRegister(*obis, uint32(12345), scalerUnit)
 
 	tests := []struct {
@@ -151,7 +151,7 @@ func TestRegisterGetAttribute(t *testing.T) {
 // TestRegisterSetAttribute verifies attribute setting.
 func TestRegisterSetAttribute(t *testing.T) {
 	obis, _ := NewObisCodeFromString("1.0.1.8.0.255")
-	scalerUnit := ScalerUnit{Scaler: -2, Unit: 27} // Wh
+	scalerUnit := ScalerUnit{Scaler: -2, Unit: UnitWattHour} // Wh
 	register, _ := NewRegister(*obis, uint32(12345), scalerUnit)
 
 	tests := []struct {
@@ -169,7 +169,7 @@ func TestRegisterSetAttribute(t *testing.T) {
 		{
 			name:        "SetValidScalerUnit",
 			attributeID: 3,
-			value:       axdr.Structure{int8(-1), uint8(30)}, // V
+			value:       axdr.Structure{int8(-1), uint8(UnitVolt)}, // V
 			expectedErr: nil,
 		},
 		{
@@ -229,7 +229,7 @@ func TestRegisterSetAttribute(t *testing.T) {
 // TestRegisterInvoke verifies method invocation.
 func TestRegisterInvoke(t *testing.T) {
 	obis, _ := NewObisCodeFromString("1.0.1.8.0.255")
-	scalerUnit := ScalerUnit{Scaler: -2, Unit: 27} // Wh
+	scalerUnit := ScalerUnit{Scaler: -2, Unit: UnitWattHour} // Wh
 	register, _ := NewRegister(*obis, uint32(12345), scalerUnit)
 
 	tests := []struct {
@@ -279,7 +279,7 @@ func TestRegisterInvoke(t *testing.T) {
 // TestRegisterGetAttributeAccess verifies attribute access rights.
 func TestRegisterGetAttributeAccess(t *testing.T) {
 	obis, _ := NewObisCodeFromString("1.0.1.8.0.255")
-	scalerUnit := ScalerUnit{Scaler: -2, Unit: 27} // Wh
+	scalerUnit := ScalerUnit{Scaler: -2, Unit: UnitWattHour} // Wh
 	register, _ := NewRegister(*obis, uint32(12345), scalerUnit)
 
 	tests := []struct {
@@ -320,7 +320,7 @@ func TestRegisterGetAttributeAccess(t *testing.T) {
 // TestRegisterGetMethodAccess verifies method access rights.
 func TestRegisterGetMethodAccess(t *testing.T) {
 	obis, _ := NewObisCodeFromString("1.0.1.8.0.255")
-	scalerUnit := ScalerUnit{Scaler: -2, Unit: 27} // Wh
+	scalerUnit := ScalerUnit{Scaler: -2, Unit: UnitWattHour} // Wh
 	register, _ := NewRegister(*obis, uint32(12345), scalerUnit)
 
 	tests := []struct {
@@ -351,7 +351,7 @@ func TestRegisterGetMethodAccess(t *testing.T) {
 // TestRegisterAXDRSerialization verifies A-XDR serialization and deserialization.
 func TestRegisterAXDRSerialization(t *testing.T) {
 	obis, _ := NewObisCodeFromString("1.0.1.8.0.255")
-	scalerUnit := ScalerUnit{Scaler: -2, Unit: 27} // Wh
+	scalerUnit := ScalerUnit{Scaler: -2, Unit: UnitWattHour} // Wh
 	tests := []struct {
 		name       string
 		value      interface{}
@@ -368,12 +368,12 @@ func TestRegisterAXDRSerialization(t *testing.T) {
 				Date: axdr.Date{Year: 2025, Month: 5, Day: 15, DayOfWeek: 4},
 				Time: axdr.Time{Hour: 7, Minute: 32},
 			},
-			scalerUnit: ScalerUnit{Scaler: 0, Unit: 255}, // Unitless
+			scalerUnit: ScalerUnit{Scaler: 0, Unit: UnitCount}, // Unitless
 		},
 		{
 			name:       "SerializeArray",
 			value:      axdr.Array{uint32(1), uint32(2)},
-			scalerUnit: ScalerUnit{Scaler: 0, Unit: 30}, // V
+			scalerUnit: ScalerUnit{Scaler: 0, Unit: UnitVolt}, // V
 		},
 	}
 
