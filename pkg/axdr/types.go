@@ -6,6 +6,51 @@ import (
 	"time"
 )
 
+// type Boolean - Tag[3]
+type Boolean bool
+
+// type DoubleLong - Tag[5]
+type DoubleLong int32
+
+// type DoubleLongUnsigned - Tag[36]
+type DoubleLongUnsigned uint32
+
+// type OctetString - Tag[9]
+type OctetString []byte
+
+// type VisibleString - Tag[10]
+type VisibleString []byte
+
+// type Utf8String - Tag[12]
+type Utf8String []byte
+
+// type Integer - Tag[15]
+type Integer int8
+
+// type Long - Tag[16]
+type Long int16
+
+// type Unsigned - Tag[17]
+type Unsigned uint8
+
+// type LongUnsigned - Tag[18]
+type LongUnsigned uint16
+
+// type Long64 - Tag[20]
+type Long64 int64
+
+// type Long64Unsigned - Tag[21]
+type Long64Unsigned uint64
+
+// type Enum - Tag[22]
+type Enum byte
+
+// type Float32 - Tag[23]
+type Float32 float32
+
+// type Float64 - Tag[24]
+type Float64 float64
+
 // Array represents an A-XDR Array (homogeneous elements)
 type Array []interface{}
 
