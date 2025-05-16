@@ -247,9 +247,12 @@ func validateFrameStructure(unstuffed []byte) (*HDLCFrame, error) {
 	}
 
 	length := int(format & 0x7FF)
-	if len(unstuffed) != length+4 {
-		return nil, errors.New("length mismatch")
+	if len(unstuffed) < length+4 {
+		return nil, errors.New("frame too short")
 	}
+
+	// Trim to exact length to handle padding from bit stuffing
+	unstuffed = unstuffed[0 : length+4]
 
 	fcsReceived := binary.BigEndian.Uint16(unstuffed[2+length : 2+length+2])
 	if calculateCRC16(unstuffed[0:2+length]) != fcsReceived {
