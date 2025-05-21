@@ -5,17 +5,33 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
+	"sync"
 )
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
 
 // Encode encodes a value into A-XDR format as per IEC 62056-6-2 and СТО 34.01-5.1-006-2023.
 // It supports primitive types, custom date/time types, bit strings, BCD, arrays, structures, and compact arrays.
 // Returns the encoded byte slice or an error if the value cannot be encoded.
 func Encode(v interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := encodeValue(&buf, v); err != nil {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		buf.Reset()
+		bufferPool.Put(buf)
+	}()
+
+	if err := encodeValue(buf, v); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	// It's important to copy the bytes from the buffer before putting it back into the pool,
+	// as the buffer's underlying []byte can be reused.
+	encodedBytes := make([]byte, buf.Len())
+	copy(encodedBytes, buf.Bytes())
+	return encodedBytes, nil
 }
 
 // encodeFunc defines a function signature for type-specific encoding.
@@ -282,8 +298,87 @@ func encodeArray(buf *bytes.Buffer, v reflect.Value) error {
 
 	// Используем Index(i) для доступа к элементам через reflection
 	for i := 0; i < length; i++ {
-		elem := v.Index(i)
-		if err := encodeValue(buf, elem.Interface()); err != nil {
+		elem := v.Index(i).Interface() // Get the actual interface value once
+		var err error
+		// Type assertions for common types, calling underlying encoders directly.
+		switch e := elem.(type) {
+		case bool:
+			buf.WriteByte(byte(TagBoolean))
+			buf.WriteByte(boolToByte(e))
+		case int8:
+			buf.WriteByte(byte(TagDeltaInteger))
+			buf.WriteByte(byte(e))
+		case int16:
+			buf.WriteByte(byte(TagDeltaLong))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case uint8:
+			buf.WriteByte(byte(TagDeltaUnsigned))
+			buf.WriteByte(e)
+		case uint16:
+			buf.WriteByte(byte(TagDeltaLongUnsigned))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case int32:
+			buf.WriteByte(byte(TagDeltaDoubleLong))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case uint32:
+			buf.WriteByte(byte(TagDeltaDoubleLongUnsigned))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case int64:
+			buf.WriteByte(byte(TagLong64))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case uint64:
+			buf.WriteByte(byte(TagLong64U))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case float32:
+			buf.WriteByte(byte(TagFloat32))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case float64:
+			buf.WriteByte(byte(TagFloat64))
+			err = binary.Write(buf, binary.BigEndian, e)
+		case string:
+			// Directly use logic from encodeString (or a part of it)
+			dataBytes := []byte(e)
+			if len(dataBytes) > 255 {
+				err = fmt.Errorf("string length %d exceeds maximum of 255", len(dataBytes))
+			} else {
+				buf.WriteByte(byte(TagVisibleString))
+				buf.WriteByte(byte(len(dataBytes)))
+				buf.Write(dataBytes)
+			}
+		case []byte:
+			// Directly use logic from encodeOctetString
+			if len(e) > 255 {
+				err = fmt.Errorf("octet-string length %d exceeds maximum of 255", len(e))
+			} else {
+				buf.WriteByte(byte(TagOctetString))
+				buf.WriteByte(byte(len(e)))
+				buf.Write(e)
+			}
+		case Date:
+			err = encodeDate(buf, e)
+		case Time:
+			err = encodeTime(buf, e)
+		case DateTime:
+			err = encodeDateTime(buf, e)
+		case BitString:
+			err = encodeBitString(buf, e)
+		case BCD:
+			err = encodeBCD(buf, e)
+		case CompactArray:
+			err = encodeCompactArray(buf, e) // Assumes encodeCompactArray handles interface{} correctly
+		case Array:
+			err = encodeArray(buf, reflect.ValueOf(e)) // Recursive call
+		case Structure:
+			err = encodeStructure(buf, reflect.ValueOf(e)) // Recursive call
+		default:
+			if elem == nil {
+				buf.WriteByte(byte(TagNull))
+			} else {
+				// Fallback for types not explicitly handled or needing full reflection
+				err = encodeValue(buf, elem)
+			}
+		}
+		if err != nil {
 			return fmt.Errorf("array element %d: %v", i, err)
 		}
 	}
@@ -296,15 +391,91 @@ func encodeArray(buf *bytes.Buffer, v reflect.Value) error {
 func encodeStructure(buf *bytes.Buffer, v reflect.Value) error {
 	buf.WriteByte(byte(TagStructure))
 
-	length := v.Len()
+	length := v.Len() // Assuming v is already a Structure (slice of interface{})
 	if length > 255 {
 		return fmt.Errorf("structure field count %d exceeds maximum of 255", length)
 	}
 	buf.WriteByte(byte(length))
 
 	for i := 0; i < length; i++ {
-		field := v.Index(i)
-		if err := encodeValue(buf, field.Interface()); err != nil {
+		field := v.Index(i).Interface() // Get the actual interface value once
+		var err error
+		// Type assertions for common types, calling underlying encoders directly
+		switch f := field.(type) {
+		case bool:
+			buf.WriteByte(byte(TagBoolean))
+			buf.WriteByte(boolToByte(f))
+		case int8:
+			buf.WriteByte(byte(TagDeltaInteger))
+			buf.WriteByte(byte(f))
+		case int16:
+			buf.WriteByte(byte(TagDeltaLong))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case uint8:
+			buf.WriteByte(byte(TagDeltaUnsigned))
+			buf.WriteByte(f)
+		case uint16:
+			buf.WriteByte(byte(TagDeltaLongUnsigned))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case int32:
+			buf.WriteByte(byte(TagDeltaDoubleLong))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case uint32:
+			buf.WriteByte(byte(TagDeltaDoubleLongUnsigned))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case int64:
+			buf.WriteByte(byte(TagLong64))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case uint64:
+			buf.WriteByte(byte(TagLong64U))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case float32:
+			buf.WriteByte(byte(TagFloat32))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case float64:
+			buf.WriteByte(byte(TagFloat64))
+			err = binary.Write(buf, binary.BigEndian, f)
+		case string:
+			dataBytes := []byte(f)
+			if len(dataBytes) > 255 {
+				err = fmt.Errorf("string length %d exceeds maximum of 255", len(dataBytes))
+			} else {
+				buf.WriteByte(byte(TagVisibleString))
+				buf.WriteByte(byte(len(dataBytes)))
+				buf.Write(dataBytes)
+			}
+		case []byte:
+			if len(f) > 255 {
+				err = fmt.Errorf("octet-string length %d exceeds maximum of 255", len(f))
+			} else {
+				buf.WriteByte(byte(TagOctetString))
+				buf.WriteByte(byte(len(f)))
+				buf.Write(f)
+			}
+		case Date:
+			err = encodeDate(buf, f)
+		case Time:
+			err = encodeTime(buf, f)
+		case DateTime:
+			err = encodeDateTime(buf, f)
+		case BitString:
+			err = encodeBitString(buf, f)
+		case BCD:
+			err = encodeBCD(buf, f)
+		case CompactArray:
+			err = encodeCompactArray(buf, f)
+		case Array:
+			err = encodeArray(buf, reflect.ValueOf(f))
+		case Structure:
+			err = encodeStructure(buf, reflect.ValueOf(f))
+		default:
+			if field == nil {
+				buf.WriteByte(byte(TagNull))
+			} else {
+				err = encodeValue(buf, field)
+			}
+		}
+		if err != nil {
 			return fmt.Errorf("structure field %d: %v", i, err)
 		}
 	}

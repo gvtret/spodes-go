@@ -4,14 +4,43 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io" // Added io for io.ReadFull
+	"sync" 
 )
+
+// Pool for bytes.Reader
+var readerPool = sync.Pool{
+	New: func() interface{} {
+		return bytes.NewReader(nil)
+	},
+}
+
+// Pools for fixed-size byte arrays used in date/time decoding
+var dateReadBufferPool = sync.Pool{
+	New: func() interface{} { return new([5]byte) },
+}
+var timeReadBufferPool = sync.Pool{
+	New: func() interface{} { return new([4]byte) },
+}
+var dateTimeReadBufferPool = sync.Pool{
+	New: func() interface{} { return new([12]byte) },
+}
 
 // Decode decodes A-XDR data into a Go value as per IEC 62056-6-2 and СТО 34.01-5.1-006-2023.
 // It supports primitive types, custom date/time types, bit strings, BCD, arrays, structures, and compact arrays.
 // Returns the decoded value or an error if the data is invalid or unsupported.
 func Decode(data []byte) (interface{}, error) {
-	reader := bytes.NewReader(data)
-	return decodeValue(reader)
+	reader := readerPool.Get().(*bytes.Reader)
+	reader.Reset(data) // Reset reader with new data
+
+	val, err := decodeValue(reader)
+
+	// It's good practice to Reset the reader to release the reference to the data slice,
+	// especially if the data slice is large, before putting the reader back.
+	reader.Reset(nil) 
+	readerPool.Put(reader)
+
+	return val, err
 }
 
 // decodeFunc defines a function signature for type-specific decoding.
@@ -291,15 +320,19 @@ func decodeBCD(reader *bytes.Reader) (interface{}, error) {
 // Expects 5 bytes: year (2), month (1), day (1), day of week (1).
 // Returns a Date struct or an error if the data is invalid.
 func decodeDate(reader *bytes.Reader) (interface{}, error) {
-	data := make([]byte, 5)
-	if _, err := reader.Read(data); err != nil {
+	arrPtr := dateReadBufferPool.Get().(*[5]byte)
+	// No need to defer Put if we always return it, but for safety/errors:
+	defer dateReadBufferPool.Put(arrPtr) 
+	dataSlice := arrPtr[:] // Get a slice view of the pooled array
+
+	if _, err := io.ReadFull(reader, dataSlice); err != nil {
 		return nil, fmt.Errorf("failed to decode date: %v", err)
 	}
 	d := Date{
-		Year:      binary.BigEndian.Uint16(data[0:2]),
-		Month:     data[2],
-		Day:       data[3],
-		DayOfWeek: data[4],
+		Year:      binary.BigEndian.Uint16(dataSlice[0:2]),
+		Month:     dataSlice[2],
+		Day:       dataSlice[3],
+		DayOfWeek: dataSlice[4],
 	}
 	if err := d.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid date: %v", err)
@@ -311,15 +344,18 @@ func decodeDate(reader *bytes.Reader) (interface{}, error) {
 // Expects 4 bytes: hour (1), minute (1), second (1), hundredths (1).
 // Returns a Time struct or an error if the data is invalid.
 func decodeTime(reader *bytes.Reader) (interface{}, error) {
-	data := make([]byte, 4)
-	if _, err := reader.Read(data); err != nil {
+	arrPtr := timeReadBufferPool.Get().(*[4]byte)
+	defer timeReadBufferPool.Put(arrPtr)
+	dataSlice := arrPtr[:]
+
+	if _, err := io.ReadFull(reader, dataSlice); err != nil {
 		return nil, fmt.Errorf("failed to decode time: %v", err)
 	}
 	t := Time{
-		Hour:       data[0],
-		Minute:     data[1],
-		Second:     data[2],
-		Hundredths: data[3],
+		Hour:       dataSlice[0],
+		Minute:     dataSlice[1],
+		Second:     dataSlice[2],
+		Hundredths: dataSlice[3],
 	}
 	if err := t.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid time: %v", err)
@@ -332,25 +368,28 @@ func decodeTime(reader *bytes.Reader) (interface{}, error) {
 // second (1), hundredths (1), deviation (2), clock status (1).
 // Returns a DateTime struct or an error if the data is invalid.
 func decodeDateTime(reader *bytes.Reader) (interface{}, error) {
-	data := make([]byte, 12)
-	if _, err := reader.Read(data); err != nil {
+	arrPtr := dateTimeReadBufferPool.Get().(*[12]byte)
+	defer dateTimeReadBufferPool.Put(arrPtr)
+	dataSlice := arrPtr[:]
+
+	if _, err := io.ReadFull(reader, dataSlice); err != nil {
 		return nil, fmt.Errorf("failed to decode datetime: %v", err)
 	}
 	dt := DateTime{
 		Date: Date{
-			Year:      binary.BigEndian.Uint16(data[0:2]),
-			Month:     data[2],
-			Day:       data[3],
-			DayOfWeek: data[4],
+			Year:      binary.BigEndian.Uint16(dataSlice[0:2]),
+			Month:     dataSlice[2],
+			Day:       dataSlice[3],
+			DayOfWeek: dataSlice[4],
 		},
 		Time: Time{
-			Hour:       data[5],
-			Minute:     data[6],
-			Second:     data[7],
-			Hundredths: data[8],
+			Hour:       dataSlice[5],
+			Minute:     dataSlice[6],
+			Second:     dataSlice[7],
+			Hundredths: dataSlice[8],
 		},
-		Deviation:   int16(binary.BigEndian.Uint16(data[9:11])),
-		ClockStatus: data[11],
+		Deviation:   int16(binary.BigEndian.Uint16(dataSlice[9:11])),
+		ClockStatus: dataSlice[11],
 	}
 	if err := dt.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid datetime: %v", err)

@@ -184,6 +184,428 @@ func TestPrimitiveTypes(t *testing.T) {
 	}
 }
 
+// Benchmarks for complex types encoding
+func BenchmarkEncodeArraySmall(b *testing.B) {
+	arr := Array{int8(1), int8(2), int8(3)}
+	for i := 0; i < b.N; i++ {
+		Encode(arr)
+	}
+}
+
+func BenchmarkEncodeArrayMedium(b *testing.B) {
+	arr := make(Array, 50)
+	for j := 0; j < 50; j++ {
+		arr[j] = int32(j)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Encode(arr)
+	}
+}
+
+func BenchmarkEncodeArrayLarge(b *testing.B) {
+	arr := make(Array, 200)
+	for j := 0; j < 200; j++ {
+		arr[j] = int64(j)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Encode(arr)
+	}
+}
+
+func BenchmarkEncodeStructureSmall(b *testing.B) {
+	str := Structure{int8(1), "test"}
+	for i := 0; i < b.N; i++ {
+		Encode(str)
+	}
+}
+
+func BenchmarkEncodeStructureMedium(b *testing.B) {
+	str := Structure{
+		int8(1), "test", true, int32(12345),
+		Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
+	}
+	for i := 0; i < b.N; i++ {
+		Encode(str)
+	}
+}
+
+func BenchmarkEncodeStructureLarge(b *testing.B) {
+	str := Structure{
+		int8(1), "test", true, int32(12345),
+		Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
+		Time{Hour: 14, Minute: 8, Second: 0, Hundredths: 0},
+		float64(3.14159), BitString{Bits: []byte{0xA5}, Length: 8},
+		[]byte{0x01, 0x02, 0x03}, BCD{Digits: []byte{1, 2, 3, 4}},
+	}
+	for i := 0; i < b.N; i++ {
+		Encode(str)
+	}
+}
+
+func BenchmarkEncodeCompactArray(b *testing.B) {
+	ca := CompactArray{
+		TypeTag: TagDeltaInteger,
+		Values:  []interface{}{int8(1), int8(2), int8(3), int8(4), int8(5)},
+	}
+	for i := 0; i < b.N; i++ {
+		Encode(ca)
+	}
+}
+
+// Benchmarks for complex types decoding
+func BenchmarkDecodeArraySmall(b *testing.B) {
+	arr := Array{int8(1), int8(2), int8(3)}
+	data, _ := Encode(arr)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeArrayMedium(b *testing.B) {
+	arr := make(Array, 50)
+	for j := 0; j < 50; j++ {
+		arr[j] = int32(j)
+	}
+	data, _ := Encode(arr)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeArrayLarge(b *testing.B) {
+	arr := make(Array, 200)
+	for j := 0; j < 200; j++ {
+		arr[j] = int64(j)
+	}
+	data, _ := Encode(arr)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeStructureSmall(b *testing.B) {
+	str := Structure{int8(1), "test"}
+	data, _ := Encode(str)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeStructureMedium(b *testing.B) {
+	str := Structure{
+		int8(1), "test", true, int32(12345),
+		Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
+	}
+	data, _ := Encode(str)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeStructureLarge(b *testing.B) {
+	str := Structure{
+		int8(1), "test", true, int32(12345),
+		Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
+		Time{Hour: 14, Minute: 8, Second: 0, Hundredths: 0},
+		float64(3.14159), BitString{Bits: []byte{0xA5}, Length: 8},
+		[]byte{0x01, 0x02, 0x03}, BCD{Digits: []byte{1, 2, 3, 4}},
+	}
+	data, _ := Encode(str)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeCompactArray(b *testing.B) {
+	ca := CompactArray{
+		TypeTag: TagDeltaInteger,
+		Values:  []interface{}{int8(1), int8(2), int8(3), int8(4), int8(5)},
+	}
+	data, _ := Encode(ca)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+// Benchmarks for primitive types encoding
+func BenchmarkEncodeBool(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(true)
+	}
+}
+
+func BenchmarkEncodeInt8(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(int8(127))
+	}
+}
+
+func BenchmarkEncodeInt16(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(int16(32767))
+	}
+}
+
+func BenchmarkEncodeInt32(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(int32(2147483647))
+	}
+}
+
+func BenchmarkEncodeInt64(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(int64(9223372036854775807))
+	}
+}
+
+func BenchmarkEncodeUint8(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(uint8(255))
+	}
+}
+
+func BenchmarkEncodeUint16(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(uint16(65535))
+	}
+}
+
+func BenchmarkEncodeUint32(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(uint32(4294967295))
+	}
+}
+
+func BenchmarkEncodeUint64(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(uint64(18446744073709551615))
+	}
+}
+
+func BenchmarkEncodeFloat32(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(float32(3.14159))
+	}
+}
+
+func BenchmarkEncodeFloat64(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode(float64(3.141592653589793))
+	}
+}
+
+func BenchmarkEncodeString(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Encode("Hello, World!")
+	}
+}
+
+func BenchmarkEncodeOctetString(b *testing.B) {
+	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
+	for i := 0; i < b.N; i++ {
+		Encode(data)
+	}
+}
+
+func BenchmarkEncodeDate(b *testing.B) {
+	date := Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2}
+	for i := 0; i < b.N; i++ {
+		Encode(date)
+	}
+}
+
+func BenchmarkEncodeTime(b *testing.B) {
+	timeVal := Time{Hour: 14, Minute: 8, Second: 0, Hundredths: 0}
+	for i := 0; i < b.N; i++ {
+		Encode(timeVal)
+	}
+}
+
+func BenchmarkEncodeDateTime(b *testing.B) {
+	dateTime := DateTime{
+		Date:        Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
+		Time:        Time{Hour: 14, Minute: 8, Second: 0, Hundredths: 0},
+		Deviation:   0,
+		ClockStatus: 0,
+	}
+	for i := 0; i < b.N; i++ {
+		Encode(dateTime)
+	}
+}
+
+func BenchmarkEncodeBitString(b *testing.B) {
+	bitString := BitString{Bits: []byte{0xA5}, Length: 8}
+	for i := 0; i < b.N; i++ {
+		Encode(bitString)
+	}
+}
+
+func BenchmarkEncodeBCD(b *testing.B) {
+	bcd := BCD{Digits: []byte{1, 2, 3, 4}}
+	for i := 0; i < b.N; i++ {
+		Encode(bcd)
+	}
+}
+
+// Benchmarks for primitive types decoding
+func BenchmarkDecodeBool(b *testing.B) {
+	data, _ := Encode(true)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeInt8(b *testing.B) {
+	data, _ := Encode(int8(127))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeInt16(b *testing.B) {
+	data, _ := Encode(int16(32767))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeInt32(b *testing.B) {
+	data, _ := Encode(int32(2147483647))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeInt64(b *testing.B) {
+	data, _ := Encode(int64(9223372036854775807))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeUint8(b *testing.B) {
+	data, _ := Encode(uint8(255))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeUint16(b *testing.B) {
+	data, _ := Encode(uint16(65535))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeUint32(b *testing.B) {
+	data, _ := Encode(uint32(4294967295))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeUint64(b *testing.B) {
+	data, _ := Encode(uint64(18446744073709551615))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeFloat32(b *testing.B) {
+	data, _ := Encode(float32(3.14159))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeFloat64(b *testing.B) {
+	data, _ := Encode(float64(3.141592653589793))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeString(b *testing.B) {
+	data, _ := Encode("Hello, World!")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeOctetString(b *testing.B) {
+	encodedData, _ := Encode([]byte{0x01, 0x02, 0x03, 0x04, 0x05})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(encodedData)
+	}
+}
+
+func BenchmarkDecodeDate(b *testing.B) {
+	data, _ := Encode(Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeTime(b *testing.B) {
+	data, _ := Encode(Time{Hour: 14, Minute: 8, Second: 0, Hundredths: 0})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeDateTime(b *testing.B) {
+	data, _ := Encode(DateTime{
+		Date:        Date{Year: 2025, Month: 5, Day: 13, DayOfWeek: 2},
+		Time:        Time{Hour: 14, Minute: 8, Second: 0, Hundredths: 0},
+		Deviation:   0,
+		ClockStatus: 0,
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeBitString(b *testing.B) {
+	data, _ := Encode(BitString{Bits: []byte{0xA5}, Length: 8})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
+func BenchmarkDecodeBCD(b *testing.B) {
+	data, _ := Encode(BCD{Digits: []byte{1, 2, 3, 4}})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decode(data)
+	}
+}
+
 // TestStringTypes tests encoding and decoding of string types (octet-string, visible-string).
 func TestStringTypes(t *testing.T) {
 	tests := []struct {

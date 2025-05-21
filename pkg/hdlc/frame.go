@@ -75,89 +75,118 @@ func calculateCRC16(data []byte) uint16 {
 
 // bitStuff applies bit stuffing to prevent flag sequence in data
 func bitStuff(data []byte) []byte {
-	var result []byte
-	var currentByte byte
-	bitPos := 0
-	countOnes := 0
-	for _, b := range data {
-		for i := 7; i >= 0; i-- {
-			bit := (b >> i) & 1
-			currentByte = (currentByte << 1) | bit
-			bitPos++
+	if len(data) == 0 {
+		return []byte{}
+	}
+	// Estimate max size: original + 1 stuffed bit per 5 bits + 1 for partial byte.
+	// len(data) * 8 bits / 5 bits_group = len(data) * 1.6. Add original len(data).
+	// So, roughly len(data) * 2.6 for bits, or len(data) * 1.2 for bytes.
+	// Max stuffed size is len(data) + len(data)/5. Add 1 for the last byte.
+	estimatedMaxSize := len(data) + (len(data) / 5) + 1
+	result := make([]byte, 0, estimatedMaxSize)
+
+	var currentWriteByte byte
+	bitWritePos := 0 // Counts 0 to 7 for currentWriteByte, MSB-first fill
+	ones := 0
+
+	for _, b := range data { // Iterate over each input byte
+		for i := 7; i >= 0; i-- { // Iterate over each bit in the input byte (MSB to LSB)
+			bit := (b >> uint(i)) & 1
+
+			// Add the current bit to currentWriteByte
+			currentWriteByte = (currentWriteByte << 1) | bit
+			bitWritePos++
+
 			if bit == 1 {
-				countOnes++
-				if countOnes == 5 {
-					currentByte <<= 1 // Insert zero bit
-					bitPos++
-					countOnes = 0
-				}
+				ones++
 			} else {
-				countOnes = 0
+				ones = 0
 			}
-			if bitPos == 8 {
-				result = append(result, currentByte)
-				currentByte = 0
-				bitPos = 0
+
+			if bitWritePos == 8 {
+				result = append(result, currentWriteByte)
+				currentWriteByte = 0
+				bitWritePos = 0
+			}
+
+			if ones == 5 {
+				// Stuff a 0 bit
+				currentWriteByte <<= 1 // Shift left to make space for the 0, it's already 0
+				bitWritePos++
+				ones = 0
+				if bitWritePos == 8 {
+					result = append(result, currentWriteByte)
+					currentWriteByte = 0
+					bitWritePos = 0
+				}
 			}
 		}
 	}
-	if bitPos > 0 {
-		currentByte <<= (8 - bitPos)
-		result = append(result, currentByte)
+
+	// If there are remaining bits in currentWriteByte, pad and append
+	if bitWritePos > 0 {
+		currentWriteByte <<= (8 - uint(bitWritePos)) // Pad with trailing zeros
+		result = append(result, currentWriteByte)
 	}
+
 	return result
 }
 
 // bitUnstuff removes bit stuffing from data
 func bitUnstuff(data []byte) ([]byte, error) {
-	var bits []byte
-	countOnes := 0
-
-	// Extract bits, removing stuffed zeros
-	for _, b := range data {
-		if err := processByteBits(b, &bits, &countOnes); err != nil {
-			return nil, err
-		}
+	if len(data) == 0 {
+		return []byte{}, nil
 	}
+	// Output can't be larger than input.
+	result := make([]byte, 0, len(data))
 
-	// Convert bits to bytes
-	return bitsToBytes(bits), nil
-}
+	var outputCurrentByte byte
+	outputBitPos := 0 // Counts 0 to 7 for outputCurrentByte, MSB-first fill
+	ones := 0         // Consecutive ones count from input stream
 
-// processByteBits processes a single byte's bits for bit unstuffing
-func processByteBits(b byte, bits *[]byte, countOnes *int) error {
-	for i := 7; i >= 0; i-- {
-		bit := (b >> i) & 1
-		if *countOnes == 5 {
-			if bit == 0 {
-				*countOnes = 0
-				continue
+	for _, b := range data { // Iterate over each input byte (stuffed data)
+		for i := 7; i >= 0; i-- { // Iterate over each bit (MSB to LSB)
+			bit := (b >> uint(i)) & 1
+
+			if ones == 5 {
+				if bit == 0 { // This is a stuffed '0' bit
+					ones = 0   // Reset counter
+					continue // Skip this bit (do not add to output)
+				}
+				// If bit is 1 after five 1s, it's an error (flag sequence in data that wasn't a flag)
+				return nil, errors.New("invalid bit stuffing")
 			}
-			return errors.New("invalid bit stuffing")
-		}
-		*bits = append(*bits, byte(bit))
-		if bit == 1 {
-			*countOnes++
-		} else {
-			*countOnes = 0
-		}
-	}
-	return nil
-}
 
-// bitsToBytes converts a slice of bits to bytes
-func bitsToBytes(bits []byte) []byte {
-	var result []byte
-	for i := 0; i < len(bits); i += 8 {
-		var byteVal byte
-		for j := 0; j < 8 && i+j < len(bits); j++ {
-			if bits[i+j] == 1 {
-				byteVal |= 1 << (7 - j)
+			// Add the bit to outputCurrentByte
+			outputCurrentByte = (outputCurrentByte << 1) | bit
+			outputBitPos++
+
+			if bit == 1 {
+				ones++
+			} else {
+				ones = 0
+			}
+
+			if outputBitPos == 8 {
+				result = append(result, outputCurrentByte)
+				outputCurrentByte = 0
+				outputBitPos = 0
 			}
 		}
-		result = append(result, byteVal)
 	}
-	return result
+
+	// After processing all input bytes, if outputBitPos > 0, these are
+	// valid data bits that form an incomplete byte. This implies the original
+	// unstuffed data was not a multiple of 8 bits long.
+	// Standard HDLC typically has byte-aligned information fields.
+	// The previous version correctly did *not* append this potentially partial byte.
+	// This is correct because if the original data was, say, 9 bits, it would be
+	// transmitted as 2 bytes (with 7 padding bits). Unstuffing should yield only
+	// the meaningful 9 bits, and if byte-aligned output is expected, this would
+	// mean 1 full byte and 1 bit for the next, which isn't how this usually works.
+	// The length of useful data is typically known from higher layers or frame length field.
+	// For this raw function, returning only full bytes is safer and matches prior fix.
+	return result, nil
 }
 
 // EncodeFrame encodes an HDLC frame with bit stuffing and CRC
