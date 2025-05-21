@@ -105,6 +105,7 @@ func (c *HDLCConnection) SendData(data []byte) error {
 			Type:        FrameTypeI,
 			NS:          c.sendSeq,
 			NR:          c.recvSeq,
+			Segmented:   segmented,
 		}
 		encoded, err := EncodeFrame(frame.DA, frame.SA, frame.Control, frame.Information, segmented)
 		if err != nil {
@@ -167,7 +168,7 @@ func (c *HDLCConnection) handleAck(nr uint8) {
 func (c *HDLCConnection) handleReject(nr uint8) error {
 	for seq := nr; seq != c.sendSeq; seq = (seq + 1) % 8 {
 		if frame, exists := c.sentFrames[seq]; exists {
-			encoded, err := EncodeFrame(frame.DA, frame.SA, frame.Control, frame.Information, false)
+			encoded, err := EncodeFrame(frame.DA, frame.SA, frame.Control, frame.Information, frame.Segmented)
 			if err != nil {
 				return err
 			}
@@ -185,59 +186,62 @@ func (c *HDLCConnection) handleReject(nr uint8) error {
 func (c *HDLCConnection) ReceiveData() ([]byte, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+	if c.state != StateConnected {
+		return nil, errors.New("not connected")
+	}
 	var result []byte
-	var segmented bool
+	expectedSeq := c.recvSeq
+
 	for {
 		frame, err := c.readFrame()
 		if err != nil {
 			return nil, err
 		}
-		if frame.Type == FrameTypeI {
-			if frame.NS == c.recvSeq {
-				c.recvBuffer[frame.NS] = frame
-				c.recvSeq = (c.recvSeq + 1) % 8
-				segmented = (frame.Format>>11)&0x1 == 1
-				rr := &HDLCFrame{
-					DA:      frame.SA,
-					SA:      frame.DA,
-					Control: (c.recvSeq << 5) | SFrameRR,
-					Type:    FrameTypeS,
-					NR:      c.recvSeq,
-				}
-				encoded, err := EncodeFrame(rr.DA, rr.SA, rr.Control, nil, false)
-				if err != nil {
-					return nil, err
-				}
-				_, err = c.transport.Write(encoded)
-				if err != nil {
-					return nil, err
-				}
-				for seq := range c.recvBuffer {
-					if f, exists := c.recvBuffer[seq]; exists {
-						result = append(result, f.Information...)
-						delete(c.recvBuffer, seq)
-					}
-				}
-				if !segmented {
-					return result, nil
-				}
-			} else {
-				rej := &HDLCFrame{
-					DA:      frame.SA,
-					SA:      frame.DA,
-					Control: (c.recvSeq << 5) | SFrameREJ,
-					Type:    FrameTypeS,
-					NR:      c.recvSeq,
-				}
-				encoded, err := EncodeFrame(rej.DA, rej.SA, rej.Control, nil, false)
-				if err != nil {
-					return nil, err
-				}
-				_, err = c.transport.Write(encoded)
-				if err != nil {
-					return nil, err
-				}
+		if frame.Type != FrameTypeI {
+			continue
+		}
+
+		if frame.NS != expectedSeq {
+			rej := &HDLCFrame{
+				DA:      frame.SA,
+				SA:      frame.DA,
+				Control: (expectedSeq << 5) | SFrameREJ,
+				Type:    FrameTypeS,
+				NR:      expectedSeq,
 			}
+			encoded, err := EncodeFrame(rej.DA, rej.SA, rej.Control, nil, false)
+			if err != nil {
+				return nil, err
+			}
+			_, err = c.transport.Write(encoded)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		result = append(result, frame.Information...)
+		expectedSeq = (frame.NS + 1) % 8
+		c.recvSeq = expectedSeq
+
+		rr := &HDLCFrame{
+			DA:      frame.SA,
+			SA:      frame.DA,
+			Control: (expectedSeq << 5) | SFrameRR,
+			Type:    FrameTypeS,
+			NR:      expectedSeq,
+		}
+		encoded, err := EncodeFrame(rr.DA, rr.SA, rr.Control, nil, false)
+		if err != nil {
+			return nil, err
+		}
+		_, err = c.transport.Write(encoded)
+		if err != nil {
+			return nil, err
+		}
+
+		if !frame.Segmented {
+			return result, nil
 		}
 	}
 }
@@ -350,46 +354,8 @@ func (c *HDLCConnection) Handle() error {
 			}
 		case StateConnected:
 			if frame.Type == FrameTypeI {
-				if frame.NS == c.recvSeq {
-					data := frame.Information
-					c.recvSeq = (c.recvSeq + 1) % 8
-					rrFrame := &HDLCFrame{
-						Type:    FrameTypeS,
-						Control: SFrameRR | (c.recvSeq << 5),
-						DA:      frame.SA,
-						SA:      frame.DA,
-					}
-					encoded, err := EncodeFrame(rrFrame.DA, rrFrame.SA, rrFrame.Control, nil, false)
-					if err != nil {
-						c.mutex.Unlock()
-						return err
-					}
-					_, err = c.transport.Write(encoded)
-					if err != nil {
-						c.mutex.Unlock()
-						return err
-					}
-					responseFrame := &HDLCFrame{
-						Type:        FrameTypeI,
-						Control:     (c.sendSeq << 1) | (c.recvSeq << 5),
-						Information: data,
-						DA:          frame.SA,
-						SA:          frame.DA,
-					}
-					encoded, err = EncodeFrame(responseFrame.DA, responseFrame.SA, responseFrame.Control, responseFrame.Information, false)
-					if err != nil {
-						c.mutex.Unlock()
-						return err
-					}
-					_, err = c.transport.Write(encoded)
-					if err != nil {
-						c.mutex.Unlock()
-						return err
-					}
-					c.sentFrames[c.sendSeq] = responseFrame
-					c.sendSeq = (c.sendSeq + 1) % 8
-					c.lastActivity = time.Now()
-				} else {
+				// Validate both N(S) and N(R)
+				if frame.NS != c.recvSeq || frame.NR != c.sendSeq {
 					rejFrame := &HDLCFrame{
 						Type:    FrameTypeS,
 						Control: SFrameREJ | (c.recvSeq << 5),
@@ -406,7 +372,48 @@ func (c *HDLCConnection) Handle() error {
 						c.mutex.Unlock()
 						return err
 					}
+					c.mutex.Unlock()
+					continue
 				}
+				data := frame.Information
+				c.recvSeq = (c.recvSeq + 1) % 8
+				rrFrame := &HDLCFrame{
+					Type:    FrameTypeS,
+					Control: SFrameRR | (c.recvSeq << 5),
+					DA:      frame.SA,
+					SA:      frame.DA,
+				}
+				encoded, err := EncodeFrame(rrFrame.DA, rrFrame.SA, rrFrame.Control, nil, false)
+				if err != nil {
+					c.mutex.Unlock()
+					return err
+				}
+				_, err = c.transport.Write(encoded)
+				if err != nil {
+					c.mutex.Unlock()
+					return err
+				}
+				responseFrame := &HDLCFrame{
+					Type:        FrameTypeI,
+					Control:     (c.sendSeq << 1) | (c.recvSeq << 5),
+					Information: data,
+					DA:          frame.SA,
+					SA:          frame.DA,
+					Segmented:   frame.Segmented,
+				}
+				encoded, err = EncodeFrame(responseFrame.DA, responseFrame.SA, responseFrame.Control, responseFrame.Information, frame.Segmented)
+				if err != nil {
+					c.mutex.Unlock()
+					return err
+				}
+				_, err = c.transport.Write(encoded)
+				if err != nil {
+					c.mutex.Unlock()
+					return err
+				}
+				c.sentFrames[c.sendSeq] = responseFrame
+				c.sendSeq = (c.sendSeq + 1) % 8
+				c.lastActivity = time.Now()
 			} else if frame.Type == FrameTypeU && frame.Control == UFrameDISC {
 				uaFrame := &HDLCFrame{
 					Type:    FrameTypeU,

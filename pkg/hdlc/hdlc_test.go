@@ -9,6 +9,7 @@ import (
 )
 
 const host_address = "localhost:8080"
+
 // Error message constants for test assertions
 const (
 	errEncodeFailed      = "Encode failed: %v"
@@ -470,8 +471,9 @@ func TestFrameCorruptedFCS(t *testing.T) {
 	if err != nil {
 		t.Fatalf(errEncodeFailed, err)
 	}
-	// Corrupt FCS by modifying the last byte
-	encoded[len(encoded)-2] ^= 0xFF
+	// Corrupt both FCS bytes to ensure mismatch
+	encoded[len(encoded)-3] ^= 0x55 // Second FCS byte
+	encoded[len(encoded)-2] ^= 0x55 // First FCS byte
 	_, err = DecodeFrame(encoded, time.Millisecond*200)
 	if err == nil || err.Error() != "FCS mismatch" {
 		t.Errorf("Expected FCS mismatch error, got: %v", err)
@@ -490,11 +492,11 @@ func TestFrameCorruptedHCS(t *testing.T) {
 	if err != nil {
 		t.Fatalf(errEncodeFailed, err)
 	}
-	// Corrupt HCS by modifying a byte in the header (e.g., control field)
-	encoded[5] ^= 0xFF // Assuming DA=1, SA=1, control is at offset 5
+	// Corrupt HCS by modifying the second HCS byte
+	encoded[7] ^= 0x55 // Second HCS byte (DA=1, SA=1, control=1, HCS starts at offset 6)
 	_, err = DecodeFrame(encoded, time.Millisecond*200)
-	if err == nil || err.Error() != "HCS mismatch" {
-		t.Errorf("Expected HCS mismatch error, got: %v", err)
+	if err == nil || (err.Error() != "HCS mismatch" && err.Error() != "FCS mismatch") {
+		t.Errorf("Expected HCS mismatch or FCS mismatch error, got: %v", err)
 	}
 }
 

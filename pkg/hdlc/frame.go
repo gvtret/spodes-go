@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -54,6 +55,7 @@ type HDLCFrame struct {
 	NS          uint8     // Send sequence number
 	NR          uint8     // Receive sequence number
 	PF          bool      // Poll/Final bit
+	Segmented   bool      // Segment flag in Format field
 }
 
 // calculateCRC16 computes the CRC-16 checksum using CCITT polynomial
@@ -79,6 +81,7 @@ func bitStuff(data []byte) []byte {
 	var currentByte byte
 	bitPos := 0
 	countOnes := 0
+
 	for _, b := range data {
 		for i := 7; i >= 0; i-- {
 			bit := (b >> i) & 1
@@ -87,14 +90,14 @@ func bitStuff(data []byte) []byte {
 			if bit == 1 {
 				countOnes++
 				if countOnes == 5 {
-					currentByte <<= 1 // Insert zero bit
+					currentByte = (currentByte << 1) // Insert zero bit
 					bitPos++
 					countOnes = 0
 				}
 			} else {
 				countOnes = 0
 			}
-			if bitPos == 8 {
+			if bitPos >= 8 {
 				result = append(result, currentByte)
 				currentByte = 0
 				bitPos = 0
@@ -105,6 +108,8 @@ func bitStuff(data []byte) []byte {
 		currentByte <<= (8 - bitPos)
 		result = append(result, currentByte)
 	}
+	// Debug: Log the stuffed output
+	fmt.Printf("Stuffed bytes: %v\n", result)
 	return result
 }
 
@@ -120,8 +125,10 @@ func bitUnstuff(data []byte) ([]byte, error) {
 		}
 	}
 
-	// Convert bits to bytes
-	return bitsToBytes(bits), nil
+	// Debug: Log the unstuffed bytes
+	result := bitsToBytes(bits)
+	fmt.Printf("Unstuffed bytes: %v\n", result)
+	return result, nil
 }
 
 // processByteBits processes a single byte's bits for bit unstuffing
@@ -255,7 +262,8 @@ func validateFrameStructure(unstuffed []byte) (*HDLCFrame, error) {
 	unstuffed = unstuffed[0 : length+4]
 
 	fcsReceived := binary.BigEndian.Uint16(unstuffed[2+length : 2+length+2])
-	if calculateCRC16(unstuffed[0:2+length]) != fcsReceived {
+	fcsCalculated := calculateCRC16(unstuffed[0:2+length])
+	if fcsCalculated != fcsReceived {
 		return nil, errors.New("FCS mismatch")
 	}
 
