@@ -2,440 +2,243 @@ package hdlc
 
 import (
 	"bytes"
-	"errors"
 	"sync"
 	"time"
-	"net"
-	"io"
 )
 
-// Connection states
+// HDLCError represents an HDLC-specific error
+type HDLCError struct {
+	Message    string
+	ShouldExit bool // Indicates if the connection should be terminated
+}
+
+func (e *HDLCError) Error() string {
+	return e.Message
+}
+
+// Predefined HDLC errors
+var (
+	ErrNotConnected              = &HDLCError{Message: "not connected", ShouldExit: true}
+	ErrAlreadyConnected          = &HDLCError{Message: "already connected or connecting"}
+	ErrInvalidUA                 = &HDLCError{Message: "did not receive UA in response to SNRM"}
+	ErrAckTimeout                = &HDLCError{Message: "ack timeout"}
+	ErrInactivityTimeout         = &HDLCError{Message: "inactivity timeout", ShouldExit: true}
+	ErrUnexpectedFrame           = &HDLCError{Message: "unexpected frame"}
+	ErrInvalidFrame              = &HDLCError{Message: "invalid frame"}
+	ErrConnectionTerminated      = &HDLCError{Message: "connection terminated", ShouldExit: true}
+	ErrUnexpectedDisconnect      = &HDLCError{Message: "unexpected disconnect", ShouldExit: true}
+	ErrFrameRejected             = &HDLCError{Message: "frame rejected", ShouldExit: true}
+	ErrDestinationAddressMissing = &HDLCError{Message: "destination address is missing"}
+	ErrSourceAddressMissing      = &HDLCError{Message: "source address is missing"}
+)
+
+// Define connection states
 const (
 	StateDisconnected = "disconnected"
 	StateConnecting   = "connecting"
 	StateConnected    = "connected"
 )
 
-// HDLCConnection manages an HDLC connection over a Transport
+// HDLCConnection manages the HDLC connection
 type HDLCConnection struct {
-	transport         Transport
 	state             string
+	destAddr          []byte
+	srcAddr           []byte
 	sendSeq           uint8
 	recvSeq           uint8
+	lastAckedSeq      uint8
 	windowSize        int
 	sentFrames        map[uint8]*HDLCFrame
 	recvBuffer        map[uint8]*HDLCFrame
 	mutex             sync.Mutex
-	interOctetTimeout time.Duration
+	ackChannel        chan uint8
 	inactivityTimeout time.Duration
 	lastActivity      time.Time
+	readBuffer        bytes.Buffer
+	inFrame           bool
 }
 
-// NewHDLCConnection creates a new HDLCConnection with specified transport
-func NewHDLCConnection(transport Transport) *HDLCConnection {
+// SetAddress sets the destination and source addresses for the connection
+func (c *HDLCConnection) SetAddress(dest, src []byte) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.destAddr = dest
+	c.srcAddr = src
+}
+
+// NewHDLCConnection creates a new HDLC connection
+func NewHDLCConnection() *HDLCConnection {
 	return &HDLCConnection{
-		transport:         transport,
 		state:             StateDisconnected,
-		sendSeq:           0,
-		recvSeq:           0,
 		windowSize:        MaxWindowSize,
 		sentFrames:        make(map[uint8]*HDLCFrame),
 		recvBuffer:        make(map[uint8]*HDLCFrame),
-		interOctetTimeout: time.Duration(InterOctetTimeout) * time.Millisecond,
+		ackChannel:        make(chan uint8, 1),
 		inactivityTimeout: time.Duration(InactivityTimeout) * time.Millisecond,
-		lastActivity:      time.Now(),
+		readBuffer:        bytes.Buffer{},
+		inFrame:           false,
 	}
 }
 
-// Connect establishes the HDLC connection using SNRM/UA exchange
-func (c *HDLCConnection) Connect() error {
+// Connect generates an SNRM frame to initiate a connection
+func (c *HDLCConnection) Connect() ([]byte, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
 	if c.state != StateDisconnected {
-		return errors.New("already connected or connecting")
+		return nil, ErrAlreadyConnected
 	}
+	if len(c.destAddr) == 0 {
+		return nil, ErrDestinationAddressMissing
+	}
+	if len(c.srcAddr) == 0 {
+		return nil, ErrSourceAddressMissing
+	}
+
 	c.state = StateConnecting
-	snrm := &HDLCFrame{
-		DA:      []byte{0xFF},
-		SA:      []byte{0x01},
-		Control: UFrameSNRM,
-		Type:    FrameTypeU,
-		PF:      true,
-	}
-	data, err := EncodeFrame(snrm.DA, snrm.SA, snrm.Control, nil, false)
-	if err != nil {
-		return err
-	}
-	_, err = c.transport.Write(data)
-	if err != nil {
-		return err
-	}
-	c.lastActivity = time.Now()
-	frame, err := c.readFrame()
-	if err != nil {
-		return err
-	}
-	if frame.Type == FrameTypeU && frame.Control == UFrameUA {
-		c.state = StateConnected
-		return nil
-	}
-	return errors.New("unexpected response to SNRM")
+	snrmFrame := &HDLCFrame{DA: c.destAddr, SA: c.srcAddr, Control: UFrameSNRM, PF: true}
+	return EncodeFrame(snrmFrame.DA, snrmFrame.SA, snrmFrame.Control, snrmFrame.Information, snrmFrame.Segmented)
 }
 
-// SendData sends data, segmenting if necessary
-func (c *HDLCConnection) SendData(data []byte) error {
+// HandleFrame processes an incoming HDLC frame and returns the response frame
+func (c *HDLCConnection) HandleFrame(frameData []byte) ([]byte, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	if c.state != StateConnected {
-		return errors.New("not connected")
-	}
-	segments := segmentData(data, MaxFrameSize)
-	for i, segment := range segments {
-		if len(c.sentFrames) >= c.windowSize {
-			if err := c.waitForAck(); err != nil {
-				return err
-			}
-		}
-		segmented := i < len(segments)-1
-		frame := &HDLCFrame{
-			DA:          []byte{0xFF},
-			SA:          []byte{0x01},
-			Control:     (c.sendSeq << 1) | (uint8(c.recvSeq) << 5),
-			Information: segment,
-			Type:        FrameTypeI,
-			NS:          c.sendSeq,
-			NR:          c.recvSeq,
-			Segmented:   segmented,
-		}
-		encoded, err := EncodeFrame(frame.DA, frame.SA, frame.Control, frame.Information, segmented)
-		if err != nil {
-			return err
-		}
-		_, err = c.transport.Write(encoded)
-		if err != nil {
-			return err
-		}
-		c.sentFrames[c.sendSeq] = frame
-		c.sendSeq = (c.sendSeq + 1) % 8
-		c.lastActivity = time.Now()
-	}
-	return nil
-}
 
-// segmentData splits data into segments
-func segmentData(data []byte, maxSize int) [][]byte {
-	var segments [][]byte
-	for len(data) > 0 {
-		size := len(data)
-		if size > maxSize {
-			size = maxSize
-		}
-		segments = append(segments, data[:size])
-		data = data[size:]
+	frame, err := DecodeFrame(frameData, 0)
+	if err != nil {
+		return nil, err
 	}
-	return segments
-}
 
-// waitForAck waits for acknowledgment or reject frames
-func (c *HDLCConnection) waitForAck() error {
-	for {
-		frame, err := c.readFrame()
-		if err != nil {
-			return err
-		}
-		if frame.Type == FrameTypeS {
-			if frame.Control&0x0F == SFrameRR {
-				c.handleAck(frame.NR)
-				return nil
-			} else if frame.Control&0x0F == SFrameREJ {
-				return c.handleReject(frame.NR)
-			}
-		}
-	}
-}
-
-// handleAck processes acknowledgment
-func (c *HDLCConnection) handleAck(nr uint8) {
-	for seq := range c.sentFrames {
-		if seq < nr {
-			delete(c.sentFrames, seq)
-		}
-	}
-	c.recvSeq = nr
-}
-
-// handleReject processes reject request by resending frames
-func (c *HDLCConnection) handleReject(nr uint8) error {
-	for seq := nr; seq != c.sendSeq; seq = (seq + 1) % 8 {
-		if frame, exists := c.sentFrames[seq]; exists {
-			encoded, err := EncodeFrame(frame.DA, frame.SA, frame.Control, frame.Information, frame.Segmented)
-			if err != nil {
-				return err
-			}
-			_, err = c.transport.Write(encoded)
-			if err != nil {
-				return err
-			}
+	switch c.state {
+	case StateDisconnected:
+		if frame.Control == UFrameSNRM {
+			c.state = StateConnected // Server moves to connected state after sending UA
 			c.lastActivity = time.Now()
+			uaFrame := &HDLCFrame{DA: frame.SA, SA: frame.DA, Type: FrameTypeU, Control: UFrameUA, PF: true}
+			return EncodeFrame(uaFrame.DA, uaFrame.SA, uaFrame.Control, uaFrame.Information, uaFrame.Segmented)
 		}
-	}
-	return nil
-}
-
-// ReceiveData receives and assembles data from I-frames
-func (c *HDLCConnection) ReceiveData() ([]byte, error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	if c.state != StateConnected {
-		return nil, errors.New("not connected")
-	}
-	var result []byte
-	expectedSeq := c.recvSeq
-
-	for {
-		frame, err := c.readFrame()
-		if err != nil {
-			return nil, err
+	case StateConnecting:
+		if frame.Control == UFrameUA {
+			c.state = StateConnected
+			c.lastActivity = time.Now()
+			return nil, nil // No response needed
 		}
-		if frame.Type != FrameTypeI {
-			continue
-		}
-
-		if frame.NS != expectedSeq {
-			rej := &HDLCFrame{
-				DA:      frame.SA,
-				SA:      frame.DA,
-				Control: (expectedSeq << 5) | SFrameREJ,
-				Type:    FrameTypeS,
-				NR:      expectedSeq,
-			}
-			encoded, err := EncodeFrame(rej.DA, rej.SA, rej.Control, nil, false)
-			if err != nil {
-				return nil, err
-			}
-			_, err = c.transport.Write(encoded)
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		result = append(result, frame.Information...)
-		expectedSeq = (frame.NS + 1) % 8
-		c.recvSeq = expectedSeq
-
-		rr := &HDLCFrame{
-			DA:      frame.SA,
-			SA:      frame.DA,
-			Control: (expectedSeq << 5) | SFrameRR,
-			Type:    FrameTypeS,
-			NR:      expectedSeq,
-		}
-		encoded, err := EncodeFrame(rr.DA, rr.SA, rr.Control, nil, false)
-		if err != nil {
-			return nil, err
-		}
-		_, err = c.transport.Write(encoded)
-		if err != nil {
-			return nil, err
-		}
-
-		if !frame.Segmented {
-			return result, nil
-		}
-	}
-}
-
-// Disconnect terminates the HDLC connection with DISC/UA
-func (c *HDLCConnection) Disconnect() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	if c.state != StateConnected {
-		return errors.New("not connected")
-	}
-	disc := &HDLCFrame{
-		DA:      []byte{0xFF},
-		SA:      []byte{0x01},
-		Control: UFrameDISC,
-		Type:    FrameTypeU,
-		PF:      true,
-	}
-	data, err := EncodeFrame(disc.DA, disc.SA, disc.Control, nil, false)
-	if err != nil {
-		return err
-	}
-	_, err = c.transport.Write(data)
-	if err != nil {
-		return err
-	}
-	c.state = StateDisconnected
-	return c.transport.Close()
-}
-
-// readFrame reads a single HDLC frame with inter-octet timeout
-func (c *HDLCConnection) readFrame() (*HDLCFrame, error) {
-	var buffer bytes.Buffer
-	for {
-		if time.Since(c.lastActivity) > c.inactivityTimeout {
+		return nil, ErrInvalidUA
+	case StateConnected:
+		if frame.Control == UFrameUA {
+			// This is in response to a DISC
 			c.state = StateDisconnected
-			c.transport.Close()
-			return nil, errors.New("inactivity timeout")
+			return nil, nil
 		}
-		b := make([]byte, 1)
-		err := c.transport.SetReadDeadline(time.Now().Add(c.interOctetTimeout))
-		if err != nil {
-			return nil, err
-		}
-		n, err := c.transport.Read(b)
-		if err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				return nil, err
-			}
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				if buffer.Len() > 0 {
-					return nil, errors.New("inter-octet timeout")
-				}
-				continue
-			}
-			return nil, err
-		}
-		if n == 0 {
-			continue
-		}
-		c.lastActivity = time.Now()
-		buffer.Write(b)
-		if b[0] == FlagByte && buffer.Len() > 1 {
-			frameData := buffer.Bytes()
-			if frameData[0] == FlagByte {
-				frame, err := DecodeFrame(frameData, c.interOctetTimeout)
-				if err != nil {
-					if err.Error() == "incomplete frame received" {
-						continue
-					}
-					return nil, err
-				}
-				return frame, nil
-			}
-			buffer.Reset()
-			buffer.WriteByte(FlagByte)
-		}
+		// Handle data and supervisory frames
+		return c.handleConnectedState(frame)
 	}
+
+	return nil, ErrNotConnected
 }
 
-// Handle processes incoming HDLC frames and manages connection state
-func (c *HDLCConnection) Handle() error {
-	for {
-		frame, err := c.readFrame()
-		if err != nil {
-			return err
+// handleConnectedState processes frames when in a connected state
+func (c *HDLCConnection) handleConnectedState(frame *HDLCFrame) ([]byte, error) {
+	switch frame.Type {
+	case FrameTypeI:
+		if frame.NS != c.recvSeq {
+			rejFrame := &HDLCFrame{DA: frame.SA, SA: frame.DA, Type: FrameTypeS, Control: SFrameREJ | (c.recvSeq << 5)}
+			return EncodeFrame(rejFrame.DA, rejFrame.SA, rejFrame.Control, rejFrame.Information, rejFrame.Segmented)
 		}
-		c.mutex.Lock()
-		switch c.state {
-		case StateDisconnected:
-			if frame.Type == FrameTypeU && frame.Control == UFrameSNRM {
-				uaFrame := &HDLCFrame{
-					Type:    FrameTypeU,
-					Control: UFrameUA,
-					DA:      frame.SA,
-					SA:      frame.DA,
-				}
-				encoded, err := EncodeFrame(uaFrame.DA, uaFrame.SA, uaFrame.Control, nil, false)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				_, err = c.transport.Write(encoded)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				c.state = StateConnected
-				c.lastActivity = time.Now()
-			}
-		case StateConnected:
-			if frame.Type == FrameTypeI {
-				// Validate both N(S) and N(R)
-				if frame.NS != c.recvSeq || frame.NR != c.sendSeq {
-					rejFrame := &HDLCFrame{
-						Type:    FrameTypeS,
-						Control: SFrameREJ | (c.recvSeq << 5),
-						DA:      frame.SA,
-						SA:      frame.DA,
-					}
-					encoded, err := EncodeFrame(rejFrame.DA, rejFrame.SA, rejFrame.Control, nil, false)
-					if err != nil {
-						c.mutex.Unlock()
-						return err
-					}
-					_, err = c.transport.Write(encoded)
-					if err != nil {
-						c.mutex.Unlock()
-						return err
-					}
-					c.mutex.Unlock()
-					continue
-				}
-				data := frame.Information
-				c.recvSeq = (c.recvSeq + 1) % 8
-				rrFrame := &HDLCFrame{
-					Type:    FrameTypeS,
-					Control: SFrameRR | (c.recvSeq << 5),
-					DA:      frame.SA,
-					SA:      frame.DA,
-				}
-				encoded, err := EncodeFrame(rrFrame.DA, rrFrame.SA, rrFrame.Control, nil, false)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				_, err = c.transport.Write(encoded)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				responseFrame := &HDLCFrame{
-					Type:        FrameTypeI,
-					Control:     (c.sendSeq << 1) | (c.recvSeq << 5),
-					Information: data,
-					DA:          frame.SA,
-					SA:          frame.DA,
-					Segmented:   frame.Segmented,
-				}
-				encoded, err = EncodeFrame(responseFrame.DA, responseFrame.SA, responseFrame.Control, responseFrame.Information, frame.Segmented)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				_, err = c.transport.Write(encoded)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				c.sentFrames[c.sendSeq] = responseFrame
-				c.sendSeq = (c.sendSeq + 1) % 8
-				c.lastActivity = time.Now()
-			} else if frame.Type == FrameTypeU && frame.Control == UFrameDISC {
-				uaFrame := &HDLCFrame{
-					Type:    FrameTypeU,
-					Control: UFrameUA,
-					DA:      frame.SA,
-					SA:      frame.DA,
-				}
-				encoded, err := EncodeFrame(uaFrame.DA, uaFrame.SA, uaFrame.Control, nil, false)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				_, err = c.transport.Write(encoded)
-				if err != nil {
-					c.mutex.Unlock()
-					return err
-				}
-				c.state = StateDisconnected
-				c.mutex.Unlock()
-				return c.transport.Close()
-			}
+		c.recvSeq = (c.recvSeq + 1) % 8
+		rrFrame := &HDLCFrame{DA: frame.SA, SA: frame.DA, Type: FrameTypeS, Control: SFrameRR | (c.recvSeq << 5)}
+		return EncodeFrame(rrFrame.DA, rrFrame.SA, rrFrame.Control, rrFrame.Information, rrFrame.Segmented)
+	case FrameTypeU:
+		if frame.Control == UFrameDISC {
+			c.state = StateDisconnected
+			uaFrame := &HDLCFrame{DA: frame.SA, SA: frame.DA, Type: FrameTypeU, Control: UFrameUA, PF: true}
+			return EncodeFrame(uaFrame.DA, uaFrame.SA, uaFrame.Control, uaFrame.Information, uaFrame.Segmented)
 		}
-		c.mutex.Unlock()
 	}
+	return nil, nil // No response for other frames for now
+}
+
+// SendData generates an I-frame for the given data payload
+func (c *HDLCConnection) SendData(data []byte) ([]byte, error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.state != StateConnected {
+		return nil, ErrNotConnected
+	}
+
+	frame := &HDLCFrame{
+		DA:          c.destAddr,
+		SA:          c.srcAddr,
+		Type:        FrameTypeI,
+		NS:          c.sendSeq,
+		NR:          c.recvSeq,
+		Information: data,
+	}
+	frame.Control = (frame.NS << 1) | (frame.NR << 5)
+
+	c.sendSeq = (c.sendSeq + 1) % 8
+	return EncodeFrame(frame.DA, frame.SA, frame.Control, frame.Information, frame.Segmented)
+}
+
+// Disconnect generates a DISC frame to terminate the connection
+func (c *HDLCConnection) Disconnect() ([]byte, error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.state != StateConnected {
+		return nil, ErrNotConnected
+	}
+	if len(c.destAddr) == 0 {
+		return nil, ErrDestinationAddressMissing
+	}
+	if len(c.srcAddr) == 0 {
+		return nil, ErrSourceAddressMissing
+	}
+
+	discFrame := &HDLCFrame{DA: c.destAddr, SA: c.srcAddr, Control: UFrameDISC, PF: true}
+	return EncodeFrame(discFrame.DA, discFrame.SA, discFrame.Control, discFrame.Information, discFrame.Segmented)
+}
+
+// Handle processes an incoming byte stream and returns any response frames
+func (c *HDLCConnection) Handle(data []byte) ([][]byte, error) {
+	c.readBuffer.Write(data)
+	var responses [][]byte
+
+	for {
+		idx := bytes.IndexByte(c.readBuffer.Bytes(), FlagByte)
+		if idx == -1 {
+			break // No flag found
+		}
+
+		if idx > 0 {
+			// There is data before the flag, which could be the end of a previous frame
+			frameData := make([]byte, idx)
+			c.readBuffer.Read(frameData)
+			fullFrame := append([]byte{FlagByte}, frameData...)
+			fullFrame = append(fullFrame, FlagByte)
+
+			response, err := c.HandleFrame(fullFrame)
+			if err == nil && response != nil {
+				responses = append(responses, response)
+			}
+		}
+		c.readBuffer.Next(1) // Consume the flag
+	}
+	return responses, nil
+}
+
+// IsConnected returns true if the connection is in the Connected state
+func (c *HDLCConnection) IsConnected() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.state == StateConnected
+}
+
+// SetState sets the connection state
+func (c *HDLCConnection) SetState(state string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.state = state
 }

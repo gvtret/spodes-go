@@ -211,10 +211,9 @@ func EncodeFrame(da, sa []byte, control byte, info []byte, segmented bool) ([]by
 	}
 	fcs := calculateCRC16(payload.Bytes())
 	binary.Write(&payload, binary.BigEndian, fcs)
-	stuffed := bitStuff(payload.Bytes())
 	var frame bytes.Buffer
 	frame.WriteByte(FlagByte)
-	frame.Write(stuffed)
+	frame.Write(payload.Bytes())
 	frame.WriteByte(FlagByte)
 	return frame.Bytes(), nil
 }
@@ -229,17 +228,12 @@ func DecodeFrame(frame []byte, interOctetTimeout time.Duration) (*HDLCFrame, err
 	}
 
 	data := frame[1 : len(frame)-1]
-	unstuffed, err := bitUnstuff(data)
+	f, err := validateFrameStructure(data)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := validateFrameStructure(unstuffed)
-	if err != nil {
-		return nil, err
-	}
-
-	return parseFrameControl(f, unstuffed)
+	return parseFrameControl(f, data)
 }
 
 // validateFrameStructure validates the frame's structure and CRC
@@ -336,11 +330,11 @@ func encodeAddress(addr []byte) []byte {
 		return nil // Invalid address length
 	}
 	encoded := make([]byte, len(addr))
-	for i := 0; i < len(addr)-1; i++ {
-		encoded[i] = addr[i] & 0xFE // Clear LSB for extension
+	for i := 0; i < len(addr); i++ {
+		encoded[i] = addr[i] << 1
 	}
 	if len(addr) > 0 {
-		encoded[len(addr)-1] = addr[len(addr)-1] | 0x01 // Set LSB for last byte
+		encoded[len(addr)-1] |= 0x01 // Set LSB for last byte
 	}
 	return encoded
 }
@@ -351,10 +345,15 @@ func decodeAddress(data []byte) ([]byte, int) {
 	for i := 0; i < len(data); i++ {
 		addr = append(addr, data[i])
 		if data[i]&0x01 == 1 {
-			if len(addr) != 1 && len(addr) != 2 && len(addr) != 4 {
+			length := len(addr)
+			if length != 1 && length != 2 && length != 4 {
 				return nil, 0 // Invalid address length
 			}
-			return addr, i + 1
+			decoded := make([]byte, length)
+			for j := 0; j < length; j++ {
+				decoded[j] = addr[j] >> 1
+			}
+			return decoded, length
 		}
 	}
 	return nil, 0
