@@ -1,23 +1,21 @@
-# Examples
+# HDLC TCP Examples
 
-This directory contains examples of how to use the transport-agnostic HDLC package with a TCP transport layer.
+This directory contains simple TCP client and server examples that demonstrate how to use the transport-agnostic HDLC package.
 
 ## Server
 
-To run the server, navigate to the `server` directory and run:
+The server listens for incoming TCP connections on port `4059`. For each connection, it creates an HDLC connection and processes incoming frames.
 
+To run the server:
+```sh
+go run examples/server/main.go
 ```
-go run .
-```
-
-The server will listen on `localhost:8080`.
 
 ## Client
 
-To run the client, navigate to the `client` directory and run:
+The client connects to the server on port `4059`, establishes an HDLC connection, sends a large, segmented PDU, and then disconnects.
 
+To run the client:
+```sh
+go run examples/client/main.go
 ```
-go run .
-```
-
-The client will connect to the server, send a test message, and print the server's response.

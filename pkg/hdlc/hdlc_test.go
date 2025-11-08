@@ -3,31 +3,36 @@ package hdlc
 import (
 	"bytes"
 	"testing"
+	"time"
 )
 
 // TestFullConnectionLifecycle validates the complete HDLC connection flow
 func TestFullConnectionLifecycle(t *testing.T) {
-	client := NewHDLCConnection()
-	server := NewHDLCConnection()
+	client := NewHDLCConnection(nil)
+	server := NewHDLCConnection(nil)
 
-	// Set addresses
 	da, sa := []byte{0x01}, []byte{0x02}
 	client.SetAddress(da, sa)
 	server.SetAddress(sa, da)
 
-	// Client sends SNRM
-	snrmFrame, err := client.Connect()
+	snrmFrameBytes, err := client.Connect()
 	if err != nil {
 		t.Fatalf("Client.Connect failed: %v", err)
 	}
 
-	// Server handles SNRM and responds with UA
-	uaFrame, err := server.HandleFrame(snrmFrame)
+	snrmFrame, err := DecodeFrame(snrmFrameBytes[1 : len(snrmFrameBytes)-1])
+	if err != nil {
+		t.Fatalf("Failed to decode SNRM: %v", err)
+	}
+	uaFrameBytes, err := server.HandleFrame(snrmFrame)
 	if err != nil {
 		t.Fatalf("Server.HandleFrame(SNRM) failed: %v", err)
 	}
 
-	// Client handles UA
+	uaFrame, err := DecodeFrame(uaFrameBytes[1 : len(uaFrameBytes)-1])
+	if err != nil {
+		t.Fatalf("Failed to decode UA: %v", err)
+	}
 	_, err = client.HandleFrame(uaFrame)
 	if err != nil {
 		t.Fatalf("Client.HandleFrame(UA) failed: %v", err)
@@ -37,22 +42,27 @@ func TestFullConnectionLifecycle(t *testing.T) {
 		t.Fatalf("Client should be connected")
 	}
 
-	// Client sends DISC
-	discFrame, err := client.Disconnect()
+	discFrameBytes, err := client.Disconnect()
 	if err != nil {
 		t.Fatalf("Client.Disconnect failed: %v", err)
 	}
 
-	// Server handles DISC and responds with UA
-	uaFrame, err = server.HandleFrame(discFrame)
+	discFrame, err := DecodeFrame(discFrameBytes[1 : len(discFrameBytes)-1])
+	if err != nil {
+		t.Fatalf("Failed to decode DISC: %v", err)
+	}
+	uaFrameBytes, err = server.HandleFrame(discFrame)
 	if err != nil {
 		t.Fatalf("Server.HandleFrame(DISC) failed: %v", err)
 	}
 
-	// Client handles UA
+	uaFrame, err = DecodeFrame(uaFrameBytes[1 : len(uaFrameBytes)-1])
+	if err != nil {
+		t.Fatalf("Failed to decode UA for DISC: %v", err)
+	}
 	_, err = client.HandleFrame(uaFrame)
 	if err != nil {
-		t.Fatalf("Client.HandleFrame(UA) failed: %v", err)
+		t.Fatalf("Client.HandleFrame(UA for DISC) failed: %v", err)
 	}
 
 	if client.IsConnected() {
@@ -60,73 +70,159 @@ func TestFullConnectionLifecycle(t *testing.T) {
 	}
 }
 
-// TestDataTransfer validates sending and receiving I-frames
-func TestDataTransfer(t *testing.T) {
-	client := NewHDLCConnection()
-	server := NewHDLCConnection()
+// TestSegmentationAndReassembly validates sending and receiving a segmented PDU
+func TestSegmentationAndReassembly(t *testing.T) {
+	config := DefaultConfig()
+	config.MaxFrameSize = 32
+	client := NewHDLCConnection(config)
+	server := NewHDLCConnection(nil)
 
-	da, sa := []byte{0x03}, []byte{0x04}
-	client.SetAddress(da, sa)
-	server.SetAddress(sa, da)
-
-	// Manually set both to connected state for this test
+	client.SetAddress([]byte{0x11}, []byte{0x22})
+	server.SetAddress([]byte{0x22}, []byte{0x11})
 	client.state = StateConnected
 	server.state = StateConnected
 
-	// Client sends I-frame
-	testData := []byte("test data")
-	iFrame, err := client.SendData(testData)
+	longPDU := bytes.Repeat([]byte("s"), client.maxFrameSize*3+10)
+
+	frames, err := client.SendData(longPDU)
 	if err != nil {
-		t.Fatalf("Client.SendData failed: %v", err)
+		t.Fatalf("Client.SendData for segmented PDU failed: %v", err)
 	}
 
-	// Server handles I-frame and should respond with RR
-	rrFrame, err := server.HandleFrame(iFrame)
-	if err != nil {
-		t.Fatalf("Server.HandleFrame(I-frame) failed: %v", err)
+	for _, frameBytes := range frames {
+		frame, err := DecodeFrame(frameBytes[1 : len(frameBytes)-1])
+		if err != nil {
+			t.Fatalf("Failed to decode frame segment: %v", err)
+		}
+		_, err = server.HandleFrame(frame)
+		if err != nil {
+			t.Fatalf("Server.HandleFrame for a segment failed: %v", err)
+		}
 	}
 
-	// Verify server sent an RR frame
-	decodedRR, err := DecodeFrame(rrFrame, 0)
-	if err != nil {
-		t.Fatalf("Failed to decode RR frame: %v", err)
-	}
-	if decodedRR.Type != FrameTypeS || (decodedRR.Control&0x0F) != SFrameRR {
-		t.Errorf("Expected RR frame, but got something else")
+	select {
+	case reassembledPDU := <-server.ReassembledData:
+		if !bytes.Equal(longPDU, reassembledPDU) {
+			t.Errorf("Reassembled PDU does not match original PDU")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Server did not reassemble the PDU in time")
 	}
 }
 
-// TestFrameRejection validates REJ frame handling
-func TestFrameRejection(t *testing.T) {
-	client := NewHDLCConnection()
-	server := NewHDLCConnection()
+// TestSlidingWindow validates that the sender stops when the window is full
+func TestSlidingWindow(t *testing.T) {
+	config := DefaultConfig()
+	config.WindowSize = 2
+	client := NewHDLCConnection(config)
+	client.SetAddress([]byte{0x33}, []byte{0x44})
+	client.state = StateConnected
 
-	da, sa := []byte{0x05}, []byte{0x06}
-	client.SetAddress(da, sa)
-	server.SetAddress(sa, da)
+	for i := 0; i < client.windowSize; i++ {
+		_, err := client.SendData([]byte{byte(i)})
+		if err != nil {
+			t.Fatalf("SendData should not have failed yet: %v", err)
+		}
+	}
 
+	_, err := client.SendData([]byte("should fail"))
+	if err == nil {
+		t.Fatal("SendData should have failed because the window is full")
+	}
+}
+
+// TestRejectFrame simulates a lost frame and tests the REJ response
+func TestRejectFrame(t *testing.T) {
+	client := NewHDLCConnection(nil)
+	server := NewHDLCConnection(nil)
+
+	client.SetAddress([]byte{0x55}, []byte{0x66})
+	server.SetAddress([]byte{0x66}, []byte{0x55})
 	client.state = StateConnected
 	server.state = StateConnected
 
-	// Manually advance client's send sequence to create an out-of-order frame
-	client.sendSeq = 1
+	_, _ = client.SendData([]byte("frame1"))
+	frames, _ := client.SendData([]byte("frame2"))
+	frame2Bytes := frames[0]
 
-	iFrame, _ := client.SendData([]byte("out of order"))
-
-	// Server should detect the sequence error and respond with REJ
-	// Note: The current HandleFrame logic does not implement REJ, so this will fail
-	// This test is written to guide the implementation of that feature.
-	rejFrame, err := server.HandleFrame(iFrame)
+	frame2, err := DecodeFrame(frame2Bytes[1 : len(frame2Bytes)-1])
 	if err != nil {
-		t.Fatalf("Server.HandleFrame failed unexpectedly: %v", err)
+		t.Fatalf("Failed to decode frame2: %v", err)
+	}
+	rejFrameBytes, err := server.HandleFrame(frame2)
+	if err != nil {
+		t.Fatalf("Server.HandleFrame should not fail on an out-of-order frame: %v", err)
 	}
 
-	decodedREJ, err := DecodeFrame(rejFrame, 0)
+	decoded, err := DecodeFrame(rejFrameBytes[1 : len(rejFrameBytes)-1])
 	if err != nil {
-		t.Fatalf("Failed to decode REJ frame: %v", err)
+		t.Fatalf("Failed to decode server response: %v", err)
 	}
-	if decodedREJ.Type != FrameTypeS || (decodedREJ.Control&0x0F) != SFrameREJ {
-		t.Errorf("Expected REJ frame, but got something else")
+	if decoded.Type != FrameTypeS || (decoded.Control&0x0F) != SFrameREJ {
+		t.Fatal("Server should have sent a REJ frame")
+	}
+}
+
+// TestReceiverNotReady validates the RNR flow control mechanism
+func TestReceiverNotReady(t *testing.T) {
+	client := NewHDLCConnection(nil)
+	server := NewHDLCConnection(nil)
+
+	client.SetAddress([]byte{0x77}, []byte{0x88})
+	server.SetAddress([]byte{0x88}, []byte{0x77})
+	client.state = StateConnected
+	server.state = StateConnected
+
+	rnrFrameBytes, _ := EncodeFrame(server.destAddr, server.srcAddr, SFrameRNR, nil, false)
+	rnrFrame, err := DecodeFrame(rnrFrameBytes[1 : len(rnrFrameBytes)-1])
+	if err != nil {
+		t.Fatalf("Failed to decode RNR frame: %v", err)
+	}
+
+	_, err = client.HandleFrame(rnrFrame)
+	if err != nil {
+		t.Fatalf("Client failed to handle RNR frame: %v", err)
+	}
+	if client.isPeerReceiverReady {
+		t.Fatal("Client should have marked the peer as not ready")
+	}
+
+	_, err = client.SendData([]byte("test"))
+	if err == nil {
+		t.Fatal("SendData should fail when the peer is not ready")
+	}
+}
+
+// TestFrameRejectHandling verifies that the connection sends an FRMR frame for an invalid frame.
+func TestFrameRejectHandling(t *testing.T) {
+	server := NewHDLCConnection(nil)
+	server.state = StateConnected
+
+	// Create a deliberately invalid frame (e.g., an S-frame with an info field)
+	invalidFrame := &HDLCFrame{
+		DA:          []byte{0x01},
+		SA:          []byte{0x02},
+		Type:        FrameTypeS,
+		Control:     SFrameRR,
+		Information: []byte("this is not allowed"),
+	}
+
+	// This is a bit of a hack, as EncodeFrame would normally prevent this.
+	// We'll manually construct a bad frame to test the server's response.
+	// For this test, we'll simulate an invalid frame type instead.
+	invalidFrame.Type = 99 // Not a valid frame type
+
+	frmrResponseBytes, err := server.handleConnectedState(invalidFrame)
+	if err != nil {
+		t.Fatalf("handleConnectedState failed: %v", err)
+	}
+
+	frmrFrame, err := DecodeFrame(frmrResponseBytes[1 : len(frmrResponseBytes)-1])
+	if err != nil {
+		t.Fatalf("Failed to decode FRMR response: %v", err)
+	}
+	if frmrFrame.Control != UFrameFRMR {
+		t.Fatal("Expected an FRMR frame in response to an invalid frame")
 	}
 }
 
@@ -142,6 +238,7 @@ func TestFrameEncodeDecode(t *testing.T) {
 		{"SNRM-Frame", &HDLCFrame{DA: []byte{0x7}, SA: []byte{0x8}, Type: FrameTypeU, Control: UFrameSNRM}},
 		{"UA-Frame", &HDLCFrame{DA: []byte{0x9}, SA: []byte{0xA}, Type: FrameTypeU, Control: UFrameUA}},
 		{"DISC-Frame", &HDLCFrame{DA: []byte{0xB}, SA: []byte{0xC}, Type: FrameTypeU, Control: UFrameDISC}},
+		{"FRMR-Frame", &HDLCFrame{DA: []byte{0xD}, SA: []byte{0xE}, Type: FrameTypeU, Control: UFrameFRMR, Information: []byte{0x01}}},
 	}
 
 	for _, tc := range testCases {
@@ -153,7 +250,8 @@ func TestFrameEncodeDecode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Encode failed: %v", err)
 			}
-			decoded, err := DecodeFrame(encoded, 0)
+
+			decoded, err := DecodeFrame(encoded[1 : len(encoded)-1])
 			if err != nil {
 				t.Fatalf("Decode failed: %v", err)
 			}
