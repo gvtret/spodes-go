@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"time"
 )
 
 // Constants for HDLC protocol
@@ -75,100 +74,12 @@ func calculateCRC16(data []byte) uint16 {
 	return ^crc
 }
 
-// bitStuff applies bit stuffing to prevent flag sequence in data
-func bitStuff(data []byte) []byte {
-	var result []byte
-	var currentByte byte
-	bitPos := 0
-	countOnes := 0
-
-	for _, b := range data {
-		for i := 7; i >= 0; i-- {
-			bit := (b >> i) & 1
-			currentByte = (currentByte << 1) | bit
-			bitPos++
-			if bit == 1 {
-				countOnes++
-				if countOnes == 5 {
-					currentByte = (currentByte << 1) // Insert zero bit
-					bitPos++
-					countOnes = 0
-				}
-			} else {
-				countOnes = 0
-			}
-			if bitPos >= 8 {
-				result = append(result, currentByte)
-				currentByte = 0
-				bitPos = 0
-			}
-		}
-	}
-	if bitPos > 0 {
-		currentByte <<= (8 - bitPos)
-		result = append(result, currentByte)
-	}
-	// Debug: Log the stuffed output
-	fmt.Printf("Stuffed bytes: %v\n", result)
-	return result
-}
-
-// bitUnstuff removes bit stuffing from data
-func bitUnstuff(data []byte) ([]byte, error) {
-	var bits []byte
-	countOnes := 0
-
-	// Extract bits, removing stuffed zeros
-	for _, b := range data {
-		if err := processByteBits(b, &bits, &countOnes); err != nil {
-			return nil, err
-		}
-	}
-
-	// Debug: Log the unstuffed bytes
-	result := bitsToBytes(bits)
-	fmt.Printf("Unstuffed bytes: %v\n", result)
-	return result, nil
-}
-
-// processByteBits processes a single byte's bits for bit unstuffing
-func processByteBits(b byte, bits *[]byte, countOnes *int) error {
-	for i := 7; i >= 0; i-- {
-		bit := (b >> i) & 1
-		if *countOnes == 5 {
-			if bit == 0 {
-				*countOnes = 0
-				continue
-			}
-			return errors.New("invalid bit stuffing")
-		}
-		*bits = append(*bits, byte(bit))
-		if bit == 1 {
-			*countOnes++
-		} else {
-			*countOnes = 0
-		}
-	}
-	return nil
-}
-
-// bitsToBytes converts a slice of bits to bytes
-func bitsToBytes(bits []byte) []byte {
-	var result []byte
-	for i := 0; i < len(bits); i += 8 {
-		var byteVal byte
-		for j := 0; j < 8 && i+j < len(bits); j++ {
-			if bits[i+j] == 1 {
-				byteVal |= 1 << (7 - j)
-			}
-		}
-		result = append(result, byteVal)
-	}
-	return result
-}
-
-// EncodeFrame encodes an HDLC frame with bit stuffing and CRC
+// EncodeFrame encodes an HDLC frame according to IEC 62056-46 (no stuffing)
 func EncodeFrame(da, sa []byte, control byte, info []byte, segmented bool) ([]byte, error) {
+	if control&0x01 == 0 && segmented {
+		control |= 0x10
+	}
+
 	encodedDA := encodeAddress(da)
 	if encodedDA == nil {
 		return nil, errors.New("invalid destination address")
@@ -183,91 +94,101 @@ func EncodeFrame(da, sa []byte, control byte, info []byte, segmented bool) ([]by
 	} else if !hasInfo && len(info) > 0 {
 		return nil, errors.New("information field not allowed for this frame type")
 	}
-	length := len(encodedDA) + len(encodedSA) + 1
+
+	// The `length` field is the length of the frame *payload*, which is
+	// everything between the format field and the FCS.
+	payloadLength := len(encodedDA) + len(encodedSA) + 1
 	if hasInfo {
-		length += 2 + len(info)
+		payloadLength += 2 + len(info) // HCS + Info
 	}
-	if length > 2047 {
+	if payloadLength > 2047 {
 		return nil, errors.New("frame too long")
 	}
-	s := 0
-	if segmented {
-		s = 1
-	}
-	format := uint16(0xA<<12) | uint16(s<<11) | uint16(length&0x7FF)
-	var header bytes.Buffer
-	binary.Write(&header, binary.BigEndian, format)
-	header.Write(encodedDA)
-	header.Write(encodedSA)
-	header.WriteByte(control)
-	if hasInfo {
-		hcs := calculateCRC16(header.Bytes())
-		binary.Write(&header, binary.BigEndian, hcs)
-	}
+
+	// Construct the frame payload (everything after format field)
 	var payload bytes.Buffer
-	payload.Write(header.Bytes())
+	payload.Write(encodedDA)
+	payload.Write(encodedSA)
+	payload.WriteByte(control)
+
+	// Add HCS and Information if needed
 	if hasInfo {
+		// HCS is calculated over Format + DA + SA + Control
+		// We need to build a temporary buffer for this
+		var headerForHCS bytes.Buffer
+		tempFormat := uint16(0xA<<12) | uint16(payloadLength&0x7FF)
+		binary.Write(&headerForHCS, binary.BigEndian, tempFormat)
+		headerForHCS.Write(payload.Bytes())
+		hcs := calculateCRC16(headerForHCS.Bytes())
+		binary.Write(&payload, binary.BigEndian, hcs)
 		payload.Write(info)
 	}
-	fcs := calculateCRC16(payload.Bytes())
-	binary.Write(&payload, binary.BigEndian, fcs)
-	var frame bytes.Buffer
-	frame.WriteByte(FlagByte)
-	frame.Write(payload.Bytes())
-	frame.WriteByte(FlagByte)
-	return frame.Bytes(), nil
+
+	// Now build the full frame body (Format + Payload) for the FCS calculation
+	var frameBody bytes.Buffer
+	format := uint16(0xA<<12) | uint16(payloadLength&0x7FF)
+	binary.Write(&frameBody, binary.BigEndian, format)
+	frameBody.Write(payload.Bytes())
+
+	fcs := calculateCRC16(frameBody.Bytes())
+
+	// Construct the final frame
+	var finalFrame bytes.Buffer
+	finalFrame.WriteByte(FlagByte)
+	finalFrame.Write(frameBody.Bytes())
+	binary.Write(&finalFrame, binary.BigEndian, fcs) // Append FCS
+	finalFrame.WriteByte(FlagByte)
+
+	return finalFrame.Bytes(), nil
 }
 
-// DecodeFrame decodes an HDLC frame, validating CRC and structure
-func DecodeFrame(frame []byte, interOctetTimeout time.Duration) (*HDLCFrame, error) {
-	if len(frame) < 1 || frame[0] != FlagByte {
-		return nil, errors.New("missing start flag")
-	}
-	if len(frame) > 1 && frame[len(frame)-1] != FlagByte {
-		return nil, errors.New("incomplete frame received")
-	}
+// DecodeFrame decodes a complete frame body (everything between the flags)
+func DecodeFrame(frameBody []byte) (*HDLCFrame, error) {
+    if len(frameBody) < 4 { // Must have at least format (2) and FCS (2)
+        return nil, errors.New("frame body is too short")
+    }
 
-	data := frame[1 : len(frame)-1]
-	f, err := validateFrameStructure(data)
+    payload := frameBody[:len(frameBody)-2]
+    fcsReceived := binary.BigEndian.Uint16(frameBody[len(frameBody)-2:])
+
+    fcsCalculated := calculateCRC16(payload)
+    if fcsCalculated != fcsReceived {
+        return nil, fmt.Errorf("FCS mismatch: received 0x%X, calculated 0x%X", fcsReceived, fcsCalculated)
+    }
+
+    format := binary.BigEndian.Uint16(payload[0:2])
+	if (format>>12)&0xF != 0xA {
+		return nil, errors.New("invalid format type")
+	}
+	length := int(format & 0x7FF)
+    // The length in the format field is the length of the payload *after* the format field.
+    // So, the total length of the `payload` buffer should be length + 2 bytes for the format field.
+    if len(payload) != length+2 {
+        return nil, fmt.Errorf("frame length mismatch: specified %d, actual %d", length, len(payload)-2)
+    }
+
+	f, err := validateFrameStructure(payload)
 	if err != nil {
 		return nil, err
 	}
 
-	return parseFrameControl(f, data)
+	return parseFrameControl(f, payload)
 }
 
-// validateFrameStructure validates the frame's structure and CRC
-func validateFrameStructure(unstuffed []byte) (*HDLCFrame, error) {
-	if len(unstuffed) < 4 {
-		return nil, errors.New("frame too short")
-	}
+// validateFrameStructure works on the full payload (Format + rest)
+func validateFrameStructure(payload []byte) (*HDLCFrame, error) {
+	format := binary.BigEndian.Uint16(payload[0:2])
+	dataPart := payload[2:]
 
-	format := binary.BigEndian.Uint16(unstuffed[0:2])
-	if (format>>12)&0xF != 0xA {
-		return nil, errors.New("invalid format type")
-	}
-
-	length := int(format & 0x7FF)
-	if len(unstuffed) < length+4 {
-		return nil, errors.New("frame too short")
-	}
-
-	// Trim to exact length to handle padding from bit stuffing
-	unstuffed = unstuffed[0 : length+4]
-
-	fcsReceived := binary.BigEndian.Uint16(unstuffed[2+length : 2+length+2])
-	fcsCalculated := calculateCRC16(unstuffed[0:2+length])
-	if fcsCalculated != fcsReceived {
-		return nil, errors.New("FCS mismatch")
-	}
-
-	dataPart := unstuffed[2 : 2+length]
 	da, daLen := decodeAddress(dataPart)
 	if daLen == 0 {
 		return nil, errors.New("invalid destination address")
 	}
 
 	saStart := daLen
+	if saStart >= len(dataPart) {
+		return nil, errors.New("frame too short for source address")
+	}
 	sa, saLen := decodeAddress(dataPart[saStart:])
 	if saLen == 0 {
 		return nil, errors.New("invalid source address")
@@ -286,10 +207,10 @@ func validateFrameStructure(unstuffed []byte) (*HDLCFrame, error) {
 	}, nil
 }
 
-// parseFrameControl parses the control field and information data
-func parseFrameControl(f *HDLCFrame, unstuffed []byte) (*HDLCFrame, error) {
-	dataPart := unstuffed[2 : 2+int(f.Format&0x7FF)]
-	controlStart := len(f.DA) + len(f.SA)
+// parseFrameControl works on the full payload (Format + rest)
+func parseFrameControl(f *HDLCFrame, payload []byte) (*HDLCFrame, error) {
+	dataPart := payload[2:]
+	controlStart := len(encodeAddress(f.DA)) + len(encodeAddress(f.SA))
 	hasInfo := hasInformation(f.Control)
 
 	if hasInfo {
@@ -298,14 +219,18 @@ func parseFrameControl(f *HDLCFrame, unstuffed []byte) (*HDLCFrame, error) {
 			return nil, errors.New("missing HCS")
 		}
 		f.HCS = binary.BigEndian.Uint16(dataPart[hcsStart : hcsStart+2])
-		header := unstuffed[0:2]
-		header = append(header, dataPart[:controlStart+1]...)
-		if calculateCRC16(header) != f.HCS {
+
+		// HCS is calculated over Format + DA + SA + Control
+		headerForHCS := payload[:2+controlStart+1]
+		if calculateCRC16(headerForHCS) != f.HCS {
 			return nil, errors.New("HCS mismatch")
 		}
+
 		f.Information = dataPart[hcsStart+2:]
-	} else if controlStart+1 < len(dataPart) {
-		return nil, errors.New("unexpected data after control")
+	} else {
+		if controlStart+1 != len(dataPart) {
+			return nil, errors.New("unexpected data after control field in non-info frame")
+		}
 	}
 
 	if f.Control&0x01 == 0 {
@@ -313,6 +238,7 @@ func parseFrameControl(f *HDLCFrame, unstuffed []byte) (*HDLCFrame, error) {
 		f.NS = (f.Control >> 1) & 0x07
 		f.PF = (f.Control & 0x10) != 0
 		f.NR = (f.Control >> 5) & 0x07
+		f.Segmented = f.PF
 	} else if f.Control&0x03 == 0x01 {
 		f.Type = FrameTypeS
 		f.PF = (f.Control & 0x10) != 0
@@ -324,17 +250,18 @@ func parseFrameControl(f *HDLCFrame, unstuffed []byte) (*HDLCFrame, error) {
 	return f, nil
 }
 
+
 // encodeAddress encodes an address (1, 2, or 4 bytes) with extension bits
 func encodeAddress(addr []byte) []byte {
 	if len(addr) != 1 && len(addr) != 2 && len(addr) != 4 {
-		return nil // Invalid address length
+		return nil
 	}
 	encoded := make([]byte, len(addr))
 	for i := 0; i < len(addr); i++ {
 		encoded[i] = addr[i] << 1
 	}
 	if len(addr) > 0 {
-		encoded[len(addr)-1] |= 0x01 // Set LSB for last byte
+		encoded[len(addr)-1] |= 0x01
 	}
 	return encoded
 }
@@ -347,7 +274,7 @@ func decodeAddress(data []byte) ([]byte, int) {
 		if data[i]&0x01 == 1 {
 			length := len(addr)
 			if length != 1 && length != 2 && length != 4 {
-				return nil, 0 // Invalid address length
+				return nil, 0
 			}
 			decoded := make([]byte, length)
 			for j := 0; j < length; j++ {

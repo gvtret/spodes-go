@@ -10,16 +10,20 @@ import (
 )
 
 func main() {
-	serverAddr := "127.0.0.1:4059"
-	conn, err := net.Dial("tcp", serverAddr)
+	serverAddr := "127.0.0.1:4060"
+	addr, err := net.ResolveUDPAddr("udp", serverAddr)
 	if err != nil {
-		log.Fatalf("Failed to connect to server: %v", err)
+		log.Fatalf("Failed to resolve UDP address: %v", err)
+	}
+
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		log.Fatalf("Failed to connect to UDP server: %v", err)
 	}
 	defer conn.Close()
-	log.Printf("Connected to HDLC server at %s", serverAddr)
+	log.Printf("UDP client connected to %s", serverAddr)
 
-	hdlcConn := hdlc.NewHDLCConnection(nil) // Use default config
-	// Client address is 0x02, Server is 0x01
+	hdlcConn := hdlc.NewHDLCConnection(nil)
 	hdlcConn.SetAddress([]byte{0x02}, []byte{0x01})
 
 	// 1. Send SNRM to connect
@@ -34,19 +38,17 @@ func main() {
 	}
 
 	// 2. Wait for UA response
-	buf := make([]byte, 1024)
+	buf := make([]byte, 2048)
 	n, err := conn.Read(buf)
 	if err != nil {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err := hdlcConn.Handle(buf[:n])
+	_, err = hdlcConn.Handle(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA response: %v", err)
 	}
-	if len(responses) > 0 {
-		log.Printf("Client received unexpected response to UA: %x", responses[0])
-	}
+
 	if !hdlcConn.IsConnected() {
 		log.Fatalf("Client failed to connect.")
 	}
@@ -54,18 +56,18 @@ func main() {
 
 	// 3. Send a large, segmented I-frame PDU
 	log.Println("Client sending: Large segmented PDU")
-	largePDU := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxyz"), 10) // 260 bytes > 128 byte maxFrameSize
+	largePDU := bytes.Repeat([]byte("udp test "), 20)
 	frames, err := hdlcConn.SendData(largePDU)
 	if err != nil {
 		log.Fatalf("Client failed to generate segmented I-frames: %v", err)
 	}
-	log.Printf("Client sending %d frames", len(frames))
-	for i, frame := range frames {
-		log.Printf("Client sending frame %d: %x", i+1, frame)
+	for _, frame := range frames {
 		_, err = conn.Write(frame)
 		if err != nil {
 			log.Fatalf("Failed to write I-frame segment: %v", err)
 		}
+		// Small delay to allow server to process each frame
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// 4. Wait for the final RR response
@@ -74,18 +76,15 @@ func main() {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err = hdlcConn.Handle(buf[:n])
+	_, err = hdlcConn.Handle(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling RR response: %v", err)
-	}
-	if len(responses) > 0 {
-		log.Printf("Client received unexpected response to RR: %x", responses[0])
 	}
 	log.Println("Client received RR acknowledgment.")
 
 	// 5. Send DISC to disconnect
 	log.Println("Client sending: DISC")
-	time.Sleep(1 * time.Second) // Give a moment before disconnecting
+	time.Sleep(1 * time.Second)
 	discFrame, err := hdlcConn.Disconnect()
 	if err != nil {
 		log.Fatalf("Client failed to generate DISC: %v", err)
@@ -101,13 +100,11 @@ func main() {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err = hdlcConn.Handle(buf[:n])
+	_, err = hdlcConn.Handle(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA for DISC: %v", err)
 	}
-	if len(responses) > 0 {
-		log.Printf("Client received unexpected response to DISC UA: %x", responses[0])
-	}
+
 	if hdlcConn.IsConnected() {
 		log.Fatalf("Client failed to disconnect.")
 	}
