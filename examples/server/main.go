@@ -4,7 +4,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"time"
 
 	"github.com/gvtret/spodes-go/pkg/hdlc"
 )
@@ -25,8 +24,6 @@ func main() {
 	}
 	defer listener.Close()
 	log.Printf("HDLC server listening on %s", listenAddr)
-
-	time.Sleep(5 * time.Second)
 
 	for {
 		conn, err := listener.Accept()

@@ -7,7 +7,15 @@ import (
 func TestApplication_HandleGetRequest(t *testing.T) {
 	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
 	associationLN, _ := NewAssociationLN(*obisAssociationLN)
-	app := NewApplication(associationLN)
+	obisSecurity, _ := NewObisCodeFromString("0.0.43.0.0.255")
+	clientSystemTitle := []byte("CLIENT")
+	serverSystemTitle := []byte("SERVER")
+	masterKey := []byte("master_key")
+	guek := []byte("global_unicast_key")
+	gak := []byte("global_auth_key")
+	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
+
+	app := NewApplication(associationLN, securitySetup)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
 	dataObj, _ := NewData(*obis, uint32(12345))
@@ -24,7 +32,16 @@ func TestApplication_HandleGetRequest(t *testing.T) {
 			},
 		}
 
-		resp := app.HandleGetRequest(req)
+		encodedReq, _ := req.Encode()
+		encodedResp, err := app.HandleAPDU(encodedReq)
+		if err != nil {
+			t.Fatalf("HandleAPDU failed: %v", err)
+		}
+		resp := &GetResponse{}
+		err = resp.Decode(encodedResp)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
 
 		if resp.Result.IsDataAccessResult {
 			t.Fatalf("Expected data, got DataAccessResult: %v", resp.Result.Value)
@@ -47,7 +64,16 @@ func TestApplication_HandleGetRequest(t *testing.T) {
 			},
 		}
 
-		resp := app.HandleGetRequest(req)
+		encodedReq, _ := req.Encode()
+		encodedResp, err := app.HandleAPDU(encodedReq)
+		if err != nil {
+			t.Fatalf("HandleAPDU failed: %v", err)
+		}
+		resp := &GetResponse{}
+		err = resp.Decode(encodedResp)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
 
 		if !resp.Result.IsDataAccessResult {
 			t.Fatal("Expected DataAccessResult, got data")
@@ -62,7 +88,14 @@ func TestApplication_HandleGetRequest(t *testing.T) {
 func TestApplication_HandleSetRequest(t *testing.T) {
 	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
 	associationLN, _ := NewAssociationLN(*obisAssociationLN)
-	app := NewApplication(associationLN)
+	obisSecurity, _ := NewObisCodeFromString("0.0.43.0.0.255")
+	clientSystemTitle := []byte("CLIENT")
+	serverSystemTitle := []byte("SERVER")
+	masterKey := []byte("master_key")
+	guek := []byte("global_unicast_key")
+	gak := []byte("global_auth_key")
+	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
+	app := NewApplication(associationLN, securitySetup)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
 	dataObj, _ := NewData(*obis, uint32(12345))
@@ -80,7 +113,16 @@ func TestApplication_HandleSetRequest(t *testing.T) {
 			Value: uint32(54321),
 		}
 
-		resp := app.HandleSetRequest(req)
+		encodedReq, _ := req.Encode()
+		encodedResp, err := app.HandleAPDU(encodedReq)
+		if err != nil {
+			t.Fatalf("HandleAPDU failed: %v", err)
+		}
+		resp := &SetResponse{}
+		err = resp.Decode(encodedResp)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
 
 		if resp.Result != SUCCESS {
 			t.Fatalf("Expected SUCCESS, got %v", resp.Result)
@@ -105,7 +147,16 @@ func TestApplication_HandleSetRequest(t *testing.T) {
 			Value: uint32(54321),
 		}
 
-		resp := app.HandleSetRequest(req)
+		encodedReq, _ := req.Encode()
+		encodedResp, err := app.HandleAPDU(encodedReq)
+		if err != nil {
+			t.Fatalf("HandleAPDU failed: %v", err)
+		}
+		resp := &SetResponse{}
+		err = resp.Decode(encodedResp)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
 
 		if resp.Result != OBJECT_UNDEFINED {
 			t.Errorf("Expected OBJECT_UNDEFINED, got %v", resp.Result)
@@ -116,7 +167,14 @@ func TestApplication_HandleSetRequest(t *testing.T) {
 func TestApplication_HandleActionRequest(t *testing.T) {
 	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
 	associationLN, _ := NewAssociationLN(*obisAssociationLN)
-	app := NewApplication(associationLN)
+	obisSecurity, _ := NewObisCodeFromString("0.0.43.0.0.255")
+	clientSystemTitle := []byte("CLIENT")
+	serverSystemTitle := []byte("SERVER")
+	masterKey := []byte("master_key")
+	guek := []byte("global_unicast_key")
+	gak := []byte("global_auth_key")
+	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
+	app := NewApplication(associationLN, securitySetup)
 
 	obis, _ := NewObisCodeFromString("1.0.0.4.0.255")
 	scalerUnit := ScalerUnit{Scaler: 0, Unit: UnitCount}
@@ -135,7 +193,16 @@ func TestApplication_HandleActionRequest(t *testing.T) {
 			Parameters: []interface{}{},
 		}
 
-		resp := app.HandleActionRequest(req)
+		encodedReq, _ := req.Encode()
+		encodedResp, err := app.HandleAPDU(encodedReq)
+		if err != nil {
+			t.Fatalf("HandleAPDU failed: %v", err)
+		}
+		resp := &ActionResponse{}
+		err = resp.Decode(encodedResp)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
 
 		if resp.Result.IsDataAccessResult {
 			t.Fatalf("Expected data, got DataAccessResult: %v", resp.Result.Value)
@@ -160,7 +227,16 @@ func TestApplication_HandleActionRequest(t *testing.T) {
 			Parameters: []interface{}{},
 		}
 
-		resp := app.HandleActionRequest(req)
+		encodedReq, _ := req.Encode()
+		encodedResp, err := app.HandleAPDU(encodedReq)
+		if err != nil {
+			t.Fatalf("HandleAPDU failed: %v", err)
+		}
+		resp := &ActionResponse{}
+		err = resp.Decode(encodedResp)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
 
 		if !resp.Result.IsDataAccessResult {
 			t.Fatal("Expected DataAccessResult, got data")

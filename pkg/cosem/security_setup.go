@@ -30,10 +30,13 @@ const (
 // SecuritySetup represents the COSEM "Security setup" interface class.
 type SecuritySetup struct {
 	BaseImpl
+	MasterKey               []byte // KEK
+	GlobalUnicastKey        []byte // GUEK
+	GlobalAuthenticationKey []byte // GAK
 }
 
 // NewSecuritySetup creates a new instance of the "Security setup" interface class.
-func NewSecuritySetup(obis ObisCode, clientSystemTitle []byte, serverSystemTitle []byte) (*SecuritySetup, error) {
+func NewSecuritySetup(obis ObisCode, clientSystemTitle []byte, serverSystemTitle []byte, masterKey, guek, gak []byte) (*SecuritySetup, error) {
 	attributes := map[byte]AttributeDescriptor{
 		1: { // logical_name
 			Type:   reflect.TypeOf(ObisCode{}),
@@ -69,5 +72,8 @@ func NewSecuritySetup(obis ObisCode, clientSystemTitle []byte, serverSystemTitle
 			Attributes: attributes,
 			Methods:    map[byte]MethodDescriptor{},
 		},
+		MasterKey:               masterKey,
+		GlobalUnicastKey:        guek,
+		GlobalAuthenticationKey: gak,
 	}, nil
 }

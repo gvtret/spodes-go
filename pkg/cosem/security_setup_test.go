@@ -10,7 +10,10 @@ func TestNewSecuritySetup(t *testing.T) {
 	obis, _ := NewObisCodeFromString("0.0.43.0.0.255")
 	clientSystemTitle := []byte("CLIENT")
 	serverSystemTitle := []byte("SERVER")
-	securitySetup, err := NewSecuritySetup(*obis, clientSystemTitle, serverSystemTitle)
+	masterKey := []byte("master_key")
+	guek := []byte("global_unicast_key")
+	gak := []byte("global_auth_key")
+	securitySetup, err := NewSecuritySetup(*obis, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
 	assert.NoError(t, err)
 
 	// Verify logical_name
@@ -37,4 +40,9 @@ func TestNewSecuritySetup(t *testing.T) {
 	val, err = securitySetup.GetAttribute(5)
 	assert.NoError(t, err)
 	assert.Equal(t, serverSystemTitle, val.([]byte))
+
+	// Verify keys
+	assert.Equal(t, masterKey, securitySetup.MasterKey)
+	assert.Equal(t, guek, securitySetup.GlobalUnicastKey)
+	assert.Equal(t, gak, securitySetup.GlobalAuthenticationKey)
 }
