@@ -9,12 +9,12 @@ import (
 
 // Constants for HDLC protocol
 const (
-	FlagByte             = 0x7E        // Frame delimiter
-	MaxWindowSize        = 7           // Maximum window size for sliding window
-	MaxFrameSize         = 2048        // Maximum frame size in bytes
-	InterOctetTimeout    = 200         // Inter-octet timeout in milliseconds
-	InactivityTimeout    = 30 * 1000   // Inactivity timeout in milliseconds
-	BroadcastAddress     = 0xFF        // Broadcast address for UI frames
+	FlagByte          = 0x7E      // Frame delimiter
+	MaxWindowSize     = 7         // Maximum window size for sliding window
+	MaxFrameSize      = 2048      // Maximum frame size in bytes
+	InterOctetTimeout = 200       // Inter-octet timeout in milliseconds
+	InactivityTimeout = 30 * 1000 // Inactivity timeout in milliseconds
+	BroadcastAddress  = 0xFF      // Broadcast address for UI frames
 )
 
 // Frame types
@@ -43,18 +43,18 @@ const (
 
 // HDLCFrame represents an HDLC frame structure
 type HDLCFrame struct {
-	Format      uint16    // Frame format field (2 bytes)
-	DA          []byte    // Destination Address (logical or physical server address)
-	SA          []byte    // Source Address (client address)
-	Control     byte      // Control field
-	HCS         uint16    // Header Check Sequence
-	Information []byte    // Information field
-	FCS         uint16    // Frame Check Sequence
-	Type        int       // Frame type (I, S, U)
-	NS          uint8     // Send sequence number
-	NR          uint8     // Receive sequence number
-	PF          bool      // Poll/Final bit
-	Segmented   bool      // Segment flag in Format field
+	Format      uint16 // Frame format field (2 bytes)
+	DA          []byte // Destination Address (logical or physical server address)
+	SA          []byte // Source Address (client address)
+	Control     byte   // Control field
+	HCS         uint16 // Header Check Sequence
+	Information []byte // Information field
+	FCS         uint16 // Frame Check Sequence
+	Type        int    // Frame type (I, S, U)
+	NS          uint8  // Send sequence number
+	NR          uint8  // Receive sequence number
+	PF          bool   // Poll/Final bit
+	Segmented   bool   // Segment flag in Format field
 }
 
 // calculateCRC16 computes the CRC-16 checksum using CCITT polynomial
@@ -144,28 +144,28 @@ func EncodeFrame(da, sa []byte, control byte, info []byte, segmented bool) ([]by
 
 // DecodeFrame decodes a complete frame body (everything between the flags)
 func DecodeFrame(frameBody []byte) (*HDLCFrame, error) {
-    if len(frameBody) < 4 { // Must have at least format (2) and FCS (2)
-        return nil, errors.New("frame body is too short")
-    }
+	if len(frameBody) < 4 { // Must have at least format (2) and FCS (2)
+		return nil, errors.New("frame body is too short")
+	}
 
-    payload := frameBody[:len(frameBody)-2]
-    fcsReceived := binary.BigEndian.Uint16(frameBody[len(frameBody)-2:])
+	payload := frameBody[:len(frameBody)-2]
+	fcsReceived := binary.BigEndian.Uint16(frameBody[len(frameBody)-2:])
 
-    fcsCalculated := calculateCRC16(payload)
-    if fcsCalculated != fcsReceived {
-        return nil, fmt.Errorf("FCS mismatch: received 0x%X, calculated 0x%X", fcsReceived, fcsCalculated)
-    }
+	fcsCalculated := calculateCRC16(payload)
+	if fcsCalculated != fcsReceived {
+		return nil, fmt.Errorf("FCS mismatch: received 0x%X, calculated 0x%X", fcsReceived, fcsCalculated)
+	}
 
-    format := binary.BigEndian.Uint16(payload[0:2])
+	format := binary.BigEndian.Uint16(payload[0:2])
 	if (format>>12)&0xF != 0xA {
 		return nil, errors.New("invalid format type")
 	}
 	length := int(format & 0x7FF)
-    // The length in the format field is the length of the payload *after* the format field.
-    // So, the total length of the `payload` buffer should be length + 2 bytes for the format field.
-    if len(payload) != length+2 {
-        return nil, fmt.Errorf("frame length mismatch: specified %d, actual %d", length, len(payload)-2)
-    }
+	// The length in the format field is the length of the payload *after* the format field.
+	// So, the total length of the `payload` buffer should be length + 2 bytes for the format field.
+	if len(payload) != length+2 {
+		return nil, fmt.Errorf("frame length mismatch: specified %d, actual %d", length, len(payload)-2)
+	}
 
 	f, err := validateFrameStructure(payload)
 	if err != nil {
@@ -249,7 +249,6 @@ func parseFrameControl(f *HDLCFrame, payload []byte) (*HDLCFrame, error) {
 
 	return f, nil
 }
-
 
 // encodeAddress encodes an address (1, 2, or 4 bytes) with extension bits
 func encodeAddress(addr []byte) []byte {

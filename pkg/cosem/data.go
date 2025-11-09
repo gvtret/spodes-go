@@ -96,5 +96,5 @@ func (d *Data) GetAttributeAccess(attributeID byte) AttributeAccess {
 // GetMethodAccess returns the access level for the specified method.
 // Always returns MethodNoAccess as the "Data" class has no methods.
 func (d *Data) GetMethodAccess(methodID byte) MethodAccess {
-	return MethodNoAccess
+	return d.BaseImpl.GetMethodAccess(methodID)
 }
