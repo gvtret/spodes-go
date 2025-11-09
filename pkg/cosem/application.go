@@ -17,9 +17,9 @@ type Application struct {
 // NewApplication creates a new COSEM application instance.
 func NewApplication(associationLN *AssociationLN, securitySetup *SecuritySetup) *Application {
 	app := &Application{
-		objects:          make(map[string]BaseInterface),
-		associationLN:    associationLN,
-		securitySetup:    securitySetup,
+		objects:       make(map[string]BaseInterface),
+		associationLN: associationLN,
+		securitySetup: securitySetup,
 	}
 	// Register the AssociationLN and SecuritySetup objects themselves
 	app.RegisterObject(associationLN)
@@ -65,6 +65,11 @@ func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
 
 		var key []byte
 		sc := header.SecurityControl
+		suite, err := app.securitySetup.GetAttribute(3)
+		if err != nil {
+			return nil, err
+		}
+
 		if sc == SecurityControlAuthenticatedAndEncrypted || sc == SecurityControlEncryptionOnly {
 			key = app.securitySetup.GlobalUnicastKey
 		} else {
@@ -76,7 +81,7 @@ func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		plaintext, err := DecryptAndVerify(key, src[6:], serverSystemTitle.([]byte), header, app.lastFrameCounter)
+		plaintext, err := DecryptAndVerify(key, src[6:], serverSystemTitle.([]byte), header, suite.(SecuritySuite), app.lastFrameCounter)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +126,7 @@ func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
 			FrameCounter:    header.FrameCounter,
 		}
 
-		ciphertext, err := EncryptAndTag(key, encodedResp, serverSystemTitle.([]byte), respHeader)
+		ciphertext, err := EncryptAndTag(key, encodedResp, serverSystemTitle.([]byte), respHeader, suite.(SecuritySuite))
 		if err != nil {
 			return nil, err
 		}
