@@ -39,23 +39,23 @@ func NewACSE(password string) *ACSE {
 // AARQ (Association Request) APDU structure, used to initiate a COSEM association.
 // It is encoded using ASN.1 BER rules.
 type AARQ struct {
-	ProtocolVersion             asn1.BitString        `asn1:"tag:0,optional,default:0"`
-	ApplicationContextName      asn1.ObjectIdentifier `asn1:"tag:1"`
-	MechanismName               asn1.ObjectIdentifier `asn1:"tag:11,optional"`
-	CallingAuthenticationValue  asn1.RawValue         `asn1:"tag:12,explicit"` // CHOICE of Authentication-value
-	UserInformation             []byte                `asn1:"tag:30,optional"`
+	ProtocolVersion            asn1.BitString        `asn1:"tag:0,optional,default:0"`
+	ApplicationContextName     asn1.ObjectIdentifier `asn1:"tag:1"`
+	MechanismName              asn1.ObjectIdentifier `asn1:"tag:11,optional"`
+	CallingAuthenticationValue asn1.RawValue         `asn1:"tag:12,explicit"` // CHOICE of Authentication-value
+	UserInformation            []byte                `asn1:"tag:30,optional"`
 }
 
 // AARE (Association Response) APDU structure, sent in response to an AARQ.
 // It is encoded using ASN.1 BER rules.
 type AARE struct {
-	ProtocolVersion              asn1.BitString         `asn1:"tag:0,optional,default:0"`
-	ApplicationContextName       asn1.ObjectIdentifier  `asn1:"tag:1"`
-	Result                       asn1.Enumerated        `asn1:"tag:2"`
-	ResultSourceDiagnostic       ResultSourceDiagnostic `asn1:"tag:3,explicit"`
-	MechanismName                asn1.ObjectIdentifier  `asn1:"tag:9,optional"`
+	ProtocolVersion               asn1.BitString         `asn1:"tag:0,optional,default:0"`
+	ApplicationContextName        asn1.ObjectIdentifier  `asn1:"tag:1"`
+	Result                        asn1.Enumerated        `asn1:"tag:2"`
+	ResultSourceDiagnostic        ResultSourceDiagnostic `asn1:"tag:3,explicit"`
+	MechanismName                 asn1.ObjectIdentifier  `asn1:"tag:9,optional"`
 	RespondingAuthenticationValue asn1.RawValue          `asn1:"tag:10,explicit,optional"` // CHOICE of Authentication-value
-	UserInformation              []byte                 `asn1:"tag:30,optional"`
+	UserInformation               []byte                 `asn1:"tag:30,optional"`
 }
 
 // RLRQ (Release Request) APDU structure, used to terminate a COSEM association.
@@ -91,10 +91,10 @@ const (
 
 // Enumerated values for ResultSourceDiagnostic.ACSEServiceUser.
 const (
-	ACSEUserNull                         asn1.Enumerated = 0
-	ACSEUserNoReasonGiven                asn1.Enumerated = 1
-	ACSEUserAppContextNotSupported       asn1.Enumerated = 2
-	ACSEUserAuthenticationFailed         asn1.Enumerated = 14
+	ACSEUserNull                                asn1.Enumerated = 0
+	ACSEUserNoReasonGiven                       asn1.Enumerated = 1
+	ACSEUserAppContextNotSupported              asn1.Enumerated = 2
+	ACSEUserAuthenticationFailed                asn1.Enumerated = 14
 	ACSEUserAuthenticationMechanismNotSupported asn1.Enumerated = 15
 )
 
@@ -107,9 +107,9 @@ const (
 
 // Enumerated values for RLRQ.Reason and RLRE.Reason fields.
 const (
-	ReasonNormal         asn1.Enumerated = 0
-	ReasonUrgent         asn1.Enumerated = 1
-	ReasonUserDefined    asn1.Enumerated = 30
+	ReasonNormal      asn1.Enumerated = 0
+	ReasonUrgent      asn1.Enumerated = 1
+	ReasonUserDefined asn1.Enumerated = 30
 )
 
 // HandleAARQ processes an AARQ and returns an AARE.

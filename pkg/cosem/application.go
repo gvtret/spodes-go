@@ -3,14 +3,19 @@ package cosem
 // Application represents a COSEM application layer instance.
 // It holds and manages all the COSEM objects.
 type Application struct {
-	objects map[string]BaseInterface
+	objects       map[string]BaseInterface
+	associationLN *AssociationLN
 }
 
 // NewApplication creates a new COSEM application instance.
-func NewApplication() *Application {
-	return &Application{
-		objects: make(map[string]BaseInterface),
+func NewApplication(associationLN *AssociationLN) *Application {
+	app := &Application{
+		objects:       make(map[string]BaseInterface),
+		associationLN: associationLN,
 	}
+	// Register the AssociationLN object itself
+	app.RegisterObject(associationLN)
+	return app
 }
 
 // RegisterObject adds a COSEM object to the application.
@@ -18,6 +23,11 @@ func NewApplication() *Application {
 func (app *Application) RegisterObject(obj BaseInterface) {
 	instanceID := obj.GetInstanceID().String()
 	app.objects[instanceID] = obj
+
+	// Add the object to the AssociationLN's object list
+	if app.associationLN != nil && obj.GetClassID() != AssociationLNClassID {
+		app.associationLN.AddObject(obj)
+	}
 }
 
 // FindObject retrieves a COSEM object by its instance ID (OBIS code).

@@ -5,7 +5,9 @@ import (
 )
 
 func TestApplication_HandleGetRequest(t *testing.T) {
-	app := NewApplication()
+	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
+	associationLN, _ := NewAssociationLN(*obisAssociationLN)
+	app := NewApplication(associationLN)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
 	dataObj, _ := NewData(*obis, uint32(12345))
@@ -58,7 +60,9 @@ func TestApplication_HandleGetRequest(t *testing.T) {
 }
 
 func TestApplication_HandleSetRequest(t *testing.T) {
-	app := NewApplication()
+	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
+	associationLN, _ := NewAssociationLN(*obisAssociationLN)
+	app := NewApplication(associationLN)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
 	dataObj, _ := NewData(*obis, uint32(12345))
@@ -110,7 +114,9 @@ func TestApplication_HandleSetRequest(t *testing.T) {
 }
 
 func TestApplication_HandleActionRequest(t *testing.T) {
-	app := NewApplication()
+	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
+	associationLN, _ := NewAssociationLN(*obisAssociationLN)
+	app := NewApplication(associationLN)
 
 	obis, _ := NewObisCodeFromString("1.0.0.4.0.255")
 	scalerUnit := ScalerUnit{Scaler: 0, Unit: UnitCount}
