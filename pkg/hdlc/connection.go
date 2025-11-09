@@ -9,18 +9,18 @@ import (
 
 // Config holds the configuration parameters for an HDLC connection.
 type Config struct {
-	WindowSize          int
-	MaxFrameSize        int
-	InactivityTimeout   time.Duration
+	WindowSize           int
+	MaxFrameSize         int
+	InactivityTimeout    time.Duration
 	FrameAssemblyTimeout time.Duration
 }
 
 // DefaultConfig returns a new Config object with default values.
 func DefaultConfig() *Config {
 	return &Config{
-		WindowSize:          MaxWindowSize,
-		MaxFrameSize:        128,
-		InactivityTimeout:   time.Duration(InactivityTimeout) * time.Millisecond,
+		WindowSize:           MaxWindowSize,
+		MaxFrameSize:         128,
+		InactivityTimeout:    time.Duration(InactivityTimeout) * time.Millisecond,
 		FrameAssemblyTimeout: 2 * time.Second,
 	}
 }
@@ -60,25 +60,25 @@ const (
 
 // HDLCConnection manages the HDLC connection
 type HDLCConnection struct {
-	state               string
-	destAddr            []byte
-	srcAddr             []byte
-	sendSeq             uint8
-	recvSeq             uint8
-	lastAckedSeq        uint8
-	windowSize          int
-	maxFrameSize        int
-	sentFrames          map[uint8]*HDLCFrame
-	recvBuffer          map[uint8]*HDLCFrame
-	segmentBuffer       []byte
-	ReassembledData     chan []byte
-	mutex               sync.Mutex
-	ackChannel          chan uint8
-	isPeerReceiverReady bool
-	inactivityTimeout   time.Duration
+	state                string
+	destAddr             []byte
+	srcAddr              []byte
+	sendSeq              uint8
+	recvSeq              uint8
+	lastAckedSeq         uint8
+	windowSize           int
+	maxFrameSize         int
+	sentFrames           map[uint8]*HDLCFrame
+	recvBuffer           map[uint8]*HDLCFrame
+	segmentBuffer        []byte
+	ReassembledData      chan []byte
+	mutex                sync.Mutex
+	ackChannel           chan uint8
+	isPeerReceiverReady  bool
+	inactivityTimeout    time.Duration
 	frameAssemblyTimeout time.Duration
-	lastActivity        time.Time
-	readBuffer          bytes.Buffer
+	lastActivity         time.Time
+	readBuffer           bytes.Buffer
 }
 
 // SetAddress sets the destination and source addresses for the connection
@@ -96,21 +96,20 @@ func NewHDLCConnection(config *Config) *HDLCConnection {
 		config = DefaultConfig()
 	}
 	return &HDLCConnection{
-		state:               StateDisconnected,
-		windowSize:          config.WindowSize,
-		maxFrameSize:        config.MaxFrameSize,
-		inactivityTimeout:   config.InactivityTimeout,
+		state:                StateDisconnected,
+		windowSize:           config.WindowSize,
+		maxFrameSize:         config.MaxFrameSize,
+		inactivityTimeout:    config.InactivityTimeout,
 		frameAssemblyTimeout: config.FrameAssemblyTimeout,
-		sentFrames:          make(map[uint8]*HDLCFrame),
-		recvBuffer:          make(map[uint8]*HDLCFrame),
-		segmentBuffer:       make([]byte, 0),
-		ReassembledData:     make(chan []byte, 10),
-		ackChannel:          make(chan uint8, 1),
-		isPeerReceiverReady: true,
-		readBuffer:          bytes.Buffer{},
+		sentFrames:           make(map[uint8]*HDLCFrame),
+		recvBuffer:           make(map[uint8]*HDLCFrame),
+		segmentBuffer:        make([]byte, 0),
+		ReassembledData:      make(chan []byte, 10),
+		ackChannel:           make(chan uint8, 1),
+		isPeerReceiverReady:  true,
+		readBuffer:           bytes.Buffer{},
 	}
 }
-
 
 // Connect generates an SNRM frame to initiate a connection
 func (c *HDLCConnection) Connect() ([]byte, error) {

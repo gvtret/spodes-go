@@ -79,6 +79,8 @@ var (
 //
 // It contains methods for getting and setting attributes, invoking methods, and getting attribute and method access.
 type BaseInterface interface {
+	GetClassID() uint16
+	GetInstanceID() ObisCode
 	GetAttribute(attributeID byte) (interface{}, error)
 	SetAttribute(attributeID byte, value interface{}) error
 	Invoke(methodID byte, parameters []interface{}) (interface{}, error)
