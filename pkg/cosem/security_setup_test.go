@@ -24,7 +24,7 @@ func TestNewSecuritySetup(t *testing.T) {
 	// Verify security_policy
 	val, err = securitySetup.GetAttribute(2)
 	assert.NoError(t, err)
-	assert.Equal(t, SecurityPolicyNone, val.(SecurityPolicy))
+	assert.Equal(t, PolicyNone, val.(SecurityPolicy))
 
 	// Verify security_suite
 	val, err = securitySetup.GetAttribute(3)
@@ -45,4 +45,15 @@ func TestNewSecuritySetup(t *testing.T) {
 	assert.Equal(t, masterKey, securitySetup.MasterKey)
 	assert.Equal(t, guek, securitySetup.GlobalUnicastKey)
 	assert.Equal(t, gak, securitySetup.GlobalAuthenticationKey)
+}
+
+func TestSecurityPolicy(t *testing.T) {
+	var sp SecurityPolicy
+	sp = PolicyAuthenticatedRequest | PolicyEncryptedRequest
+	assert.True(t, sp&PolicyAuthenticatedRequest != 0)
+	assert.True(t, sp&PolicyEncryptedRequest != 0)
+	assert.False(t, sp&PolicyDigitallySignedRequest != 0)
+
+	sp = PolicyNone
+	assert.False(t, sp&PolicyAuthenticatedRequest != 0)
 }

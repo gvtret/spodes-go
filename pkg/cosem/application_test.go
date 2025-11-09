@@ -1,6 +1,7 @@
 package cosem
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -246,4 +247,49 @@ func TestApplication_HandleActionRequest(t *testing.T) {
 			t.Errorf("DataAccessResult mismatch: got %v, want %v", resp.Result.Value, OBJECT_UNDEFINED)
 		}
 	})
+}
+
+func TestApplication_SecurityPolicy(t *testing.T) {
+	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
+	associationLN, _ := NewAssociationLN(*obisAssociationLN)
+	obisSecurity, _ := NewObisCodeFromString("0.0.43.0.0.255")
+	clientSystemTitle := []byte("CLIENT")
+	serverSystemTitle := []byte("SERVER01")
+	masterKey := []byte("master_key")
+	guek := []byte("0123456789ABCDEF")
+	gak := []byte("0123456789ABCDEF")
+	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
+	app := NewApplication(associationLN, securitySetup)
+	app.securitySetup.SetAttribute(2, PolicyAuthenticatedRequest)
+
+	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
+	dataObj, _ := NewData(*obis, uint32(12345))
+	app.RegisterObject(dataObj)
+
+	req := &GetRequest{
+		Type:                GET_REQUEST_NORMAL,
+		InvokeIDAndPriority: 0x81,
+		AttributeDescriptor: CosemAttributeDescriptor{
+			ClassID:     DataClassID,
+			InstanceID:  *obis,
+			AttributeID: 2,
+		},
+	}
+	encodedReq, _ := req.Encode()
+
+	_, err := app.HandleAPDU(encodedReq)
+	assert.Error(t, err)
+
+	header := &SecurityHeader{
+		SecurityControl: SecurityControlEncryptionOnly, // Policy requires authentication
+		FrameCounter:    1,
+	}
+
+	ciphertext, err := EncryptAndTag(guek, encodedReq, serverSystemTitle, header, SecuritySuite0)
+	assert.NoError(t, err)
+	encodedHeader, _ := header.Encode()
+	securedReq := append([]byte{byte(APDU_GLO_GET_REQUEST)}, append(encodedHeader, ciphertext...)...)
+
+	_, err = app.HandleAPDU(securedReq)
+	assert.Error(t, err)
 }

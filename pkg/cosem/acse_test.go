@@ -83,8 +83,8 @@ func TestRLRE_EncodeDecode(t *testing.T) {
 	assert.Equal(t, rlre.Reason, decoded.Reason)
 }
 
-func TestACSE_HandleAARQ(t *testing.T) {
-	acse := NewACSE("password")
+func TestACSE_HandleAARQ_LLS(t *testing.T) {
+	acse := NewACSE("password", nil, nil)
 
 	t.Run("Successful Association", func(t *testing.T) {
 		authValue, _ := asn1.Marshal(AuthenticationValue{GraphicString: "password"})
@@ -96,7 +96,8 @@ func TestACSE_HandleAARQ(t *testing.T) {
 			},
 		}
 
-		aare := acse.HandleAARQ(aarq)
+		aare, err := acse.HandleAARQ(aarq, nil)
+		assert.NoError(t, err)
 		assert.Equal(t, ResultAccepted, aare.Result)
 		assert.Equal(t, StateAssociated, acse.state)
 	})
@@ -111,14 +112,44 @@ func TestACSE_HandleAARQ(t *testing.T) {
 			},
 		}
 
-		aare := acse.HandleAARQ(aarq)
+		aare, err := acse.HandleAARQ(aarq, nil)
+		assert.NoError(t, err)
 		assert.Equal(t, ResultRejectedPermanent, aare.Result)
 		assert.Equal(t, ACSEUserAuthenticationFailed, aare.ResultSourceDiagnostic.ACSEServiceUser)
 	})
 }
 
+func TestACSE_HandleAARQ_HLS(t *testing.T) {
+	priv, pub, err := GenerateECDHKeys()
+	assert.NoError(t, err)
+	acse := NewACSE("", priv, []byte("SERVER01"))
+
+	clientPriv, clientPub, err := GenerateECDHKeys()
+	assert.NoError(t, err)
+	marshaledClientPub, _ := MarshalPublicKey(clientPub)
+	authValue, _ := asn1.Marshal(HLSAuthentication{EphemeralPublicKey: marshaledClientPub})
+	aarq := &AARQ{
+		ApplicationContextName: OidApplicationContextLN,
+		MechanismName:          OidMechanismHLS,
+		CallingAuthenticationValue: asn1.RawValue{
+			Bytes: authValue,
+		},
+	}
+	obis, _ := NewObisCodeFromString("0.0.43.0.0.255")
+	securitySetup, _ := NewSecuritySetup(*obis, []byte("CLIENT"), []byte("SERVER01"), nil, nil, nil)
+
+	aare, err := acse.HandleAARQ(aarq, securitySetup)
+	assert.NoError(t, err)
+	assert.Equal(t, ResultAccepted, aare.Result)
+
+	sharedSecret, _ := ECDH(clientPriv, pub)
+	guek, gak, _ := deriveKeys(sharedSecret)
+	assert.Equal(t, guek, securitySetup.GlobalUnicastKey)
+	assert.Equal(t, gak, securitySetup.GlobalAuthenticationKey)
+}
+
 func TestACSE_HandleRLRQ(t *testing.T) {
-	acse := NewACSE("password")
+	acse := NewACSE("password", nil, nil)
 	acse.state = StateAssociated
 
 	rlrq := &RLRQ{

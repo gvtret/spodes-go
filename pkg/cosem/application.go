@@ -54,6 +54,12 @@ func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
 
 	apduType := APDUType(src[0])
 
+	policy, err := app.securitySetup.GetAttribute(2)
+	if err != nil {
+		return nil, err
+	}
+	securityPolicy := policy.(SecurityPolicy)
+
 	// Handle secured APDUs
 	switch apduType {
 	case APDU_GLO_GET_REQUEST, APDU_GLO_SET_REQUEST, APDU_GLO_ACTION_REQUEST:
@@ -63,8 +69,16 @@ func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		var key []byte
+		// Check security policy
 		sc := header.SecurityControl
+		if (securityPolicy&PolicyAuthenticatedRequest != 0) && (sc != SecurityControlAuthenticationOnly && sc != SecurityControlAuthenticatedAndEncrypted) {
+			return nil, fmt.Errorf("security policy violation: authenticated request required")
+		}
+		if (securityPolicy&PolicyEncryptedRequest != 0) && (sc != SecurityControlEncryptionOnly && sc != SecurityControlAuthenticatedAndEncrypted) {
+			return nil, fmt.Errorf("security policy violation: encrypted request required")
+		}
+
+		var key []byte
 		suite, err := app.securitySetup.GetAttribute(3)
 		if err != nil {
 			return nil, err
@@ -150,30 +164,36 @@ func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
 		return append([]byte{byte(respAPDUType)}, append(encodedRespHeader, ciphertext...)...), nil
 
 	// Handle unsecured APDUs
-	case APDU_GET_REQUEST:
-		req := &GetRequest{}
-		err := req.Decode(src)
-		if err != nil {
-			return nil, err
+	case APDU_GET_REQUEST, APDU_SET_REQUEST, APDU_ACTION_REQUEST:
+		if securityPolicy != PolicyNone {
+			return nil, fmt.Errorf("security policy violation: unsecured request not allowed")
 		}
-		return app.HandleGetRequest(req).Encode()
-	case APDU_SET_REQUEST:
-		req := &SetRequest{}
-		err := req.Decode(src)
-		if err != nil {
-			return nil, err
+
+		switch apduType {
+		case APDU_GET_REQUEST:
+			req := &GetRequest{}
+			err := req.Decode(src)
+			if err != nil {
+				return nil, err
+			}
+			return app.HandleGetRequest(req).Encode()
+		case APDU_SET_REQUEST:
+			req := &SetRequest{}
+			err := req.Decode(src)
+			if err != nil {
+				return nil, err
+			}
+			return app.HandleSetRequest(req).Encode()
+		case APDU_ACTION_REQUEST:
+			req := &ActionRequest{}
+			err := req.Decode(src)
+			if err != nil {
+				return nil, err
+			}
+			return app.HandleActionRequest(req).Encode()
 		}
-		return app.HandleSetRequest(req).Encode()
-	case APDU_ACTION_REQUEST:
-		req := &ActionRequest{}
-		err := req.Decode(src)
-		if err != nil {
-			return nil, err
-		}
-		return app.HandleActionRequest(req).Encode()
-	default:
-		return nil, fmt.Errorf("unsupported APDU type: %X", apduType)
 	}
+	return nil, fmt.Errorf("unsupported APDU type: %X", apduType)
 }
 
 // APDU is an interface for all APDU types.

@@ -11,13 +11,17 @@ const SecuritySetupClassID uint16 = 64
 const SecuritySetupVersion byte = 0
 
 // SecurityPolicy represents the security_policy attribute of the Security setup class.
+// It's a bitmask defining the minimum security level for requests and responses.
 type SecurityPolicy byte
 
 const (
-	SecurityPolicyNone                      SecurityPolicy = 0
-	SecurityPolicyAuthenticated             SecurityPolicy = 1
-	SecurityPolicyEncrypted                 SecurityPolicy = 2
-	SecurityPolicyAuthenticatedAndEncrypted SecurityPolicy = 3
+	PolicyNone                    SecurityPolicy = 0x00
+	PolicyAuthenticatedRequest    SecurityPolicy = 0x04 // bit 2
+	PolicyEncryptedRequest        SecurityPolicy = 0x08 // bit 3
+	PolicyDigitallySignedRequest  SecurityPolicy = 0x10 // bit 4
+	PolicyAuthenticatedResponse   SecurityPolicy = 0x20 // bit 5
+	PolicyEncryptedResponse       SecurityPolicy = 0x40 // bit 6
+	PolicyDigitallySignedResponse SecurityPolicy = 0x80 // bit 7
 )
 
 // SecuritySuite represents the security_suite attribute of the Security setup class.
@@ -46,9 +50,9 @@ func NewSecuritySetup(obis ObisCode, clientSystemTitle []byte, serverSystemTitle
 			Value:  obis,
 		},
 		2: { // security_policy
-			Type:   reflect.TypeOf(SecurityPolicyNone),
+			Type:   reflect.TypeOf(PolicyNone),
 			Access: AttributeRead | AttributeWrite,
-			Value:  SecurityPolicyNone,
+			Value:  PolicyNone,
 		},
 		3: { // security_suite
 			Type:   reflect.TypeOf(SecuritySuite0),
