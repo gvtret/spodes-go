@@ -112,11 +112,11 @@ func handleWrapperConnection(conn net.Conn) {
 
 		// Echo the payload back
 		respFrame := &wrapper.Frame{
-			Version:    wrapper.Version,
-			SrcAddr:    frame.DstAddr,
-			DstAddr:    frame.SrcAddr,
-			Length:     frame.Length,
-			Payload:    frame.Payload,
+			Version: wrapper.Version,
+			SrcAddr: frame.DstAddr,
+			DstAddr: frame.SrcAddr,
+			Length:  frame.Length,
+			Payload: frame.Payload,
 		}
 
 		log.Printf("Server sending response frame: %+v", respFrame)

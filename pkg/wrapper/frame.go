@@ -12,11 +12,11 @@ const (
 
 // Frame represents a WRAPPER frame.
 type Frame struct {
-	Version    uint16
-	SrcAddr    uint16
-	DstAddr    uint16
-	Length     uint16
-	Payload    []byte
+	Version uint16
+	SrcAddr uint16
+	DstAddr uint16
+	Length  uint16
+	Payload []byte
 }
 
 // Encode serializes the frame into a byte slice.
