@@ -54,146 +54,147 @@ func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
 
 	apduType := APDUType(src[0])
 
+	switch apduType {
+	case APDU_GLO_GET_REQUEST, APDU_GLO_SET_REQUEST, APDU_GLO_ACTION_REQUEST:
+		return app.handleSecuredAPDU(apduType, src)
+	case APDU_GET_REQUEST, APDU_SET_REQUEST, APDU_ACTION_REQUEST:
+		return app.handleUnsecuredAPDU(apduType, src)
+	default:
+		return nil, fmt.Errorf("unsupported APDU type: %X", apduType)
+	}
+}
+
+func (app *Application) handleSecuredAPDU(apduType APDUType, src []byte) ([]byte, error) {
 	policy, err := app.securitySetup.GetAttribute(2)
 	if err != nil {
 		return nil, err
 	}
 	securityPolicy := policy.(SecurityPolicy)
 
-	// Handle secured APDUs
-	switch apduType {
-	case APDU_GLO_GET_REQUEST, APDU_GLO_SET_REQUEST, APDU_GLO_ACTION_REQUEST:
-		header := &SecurityHeader{}
-		err := header.Decode(src[1:])
-		if err != nil {
-			return nil, err
-		}
-
-		// Check security policy
-		sc := header.SecurityControl
-		if (securityPolicy&PolicyAuthenticatedRequest != 0) && (sc != SecurityControlAuthenticationOnly && sc != SecurityControlAuthenticatedAndEncrypted) {
-			return nil, fmt.Errorf("security policy violation: authenticated request required")
-		}
-		if (securityPolicy&PolicyEncryptedRequest != 0) && (sc != SecurityControlEncryptionOnly && sc != SecurityControlAuthenticatedAndEncrypted) {
-			return nil, fmt.Errorf("security policy violation: encrypted request required")
-		}
-
-		var key []byte
-		suite, err := app.securitySetup.GetAttribute(3)
-		if err != nil {
-			return nil, err
-		}
-
-		if sc == SecurityControlAuthenticatedAndEncrypted || sc == SecurityControlEncryptionOnly {
-			key = app.securitySetup.GlobalUnicastKey
-		} else {
-			key = app.securitySetup.GlobalAuthenticationKey
-		}
-
-		serverSystemTitle, err := app.securitySetup.GetAttribute(5)
-		if err != nil {
-			return nil, err
-		}
-
-		plaintext, err := DecryptAndVerify(key, src[6:], serverSystemTitle.([]byte), header, suite.(SecuritySuite), app.lastFrameCounter)
-		if err != nil {
-			return nil, err
-		}
-		app.lastFrameCounter = header.FrameCounter
-
-		// Dispatch to the appropriate handler
-		var respAPDU APDU
-		switch APDUType(plaintext[0]) {
-		case APDU_GET_REQUEST:
-			req := &GetRequest{}
-			err = req.Decode(plaintext)
-			if err != nil {
-				return nil, err
-			}
-			respAPDU = app.HandleGetRequest(req)
-		case APDU_SET_REQUEST:
-			req := &SetRequest{}
-			err = req.Decode(plaintext)
-			if err != nil {
-				return nil, err
-			}
-			respAPDU = app.HandleSetRequest(req)
-		case APDU_ACTION_REQUEST:
-			req := &ActionRequest{}
-			err = req.Decode(plaintext)
-			if err != nil {
-				return nil, err
-			}
-			respAPDU = app.HandleActionRequest(req)
-		default:
-			return nil, fmt.Errorf("unsupported APDU type in secured APDU: %X", plaintext[0])
-		}
-
-		// Wrap the response in a secured APDU
-		encodedResp, err := respAPDU.Encode()
-		if err != nil {
-			return nil, err
-		}
-
-		respHeader := &SecurityHeader{
-			SecurityControl: header.SecurityControl,
-			FrameCounter:    header.FrameCounter,
-		}
-
-		ciphertext, err := EncryptAndTag(key, encodedResp, serverSystemTitle.([]byte), respHeader, suite.(SecuritySuite))
-		if err != nil {
-			return nil, err
-		}
-
-		encodedRespHeader, err := respHeader.Encode()
-		if err != nil {
-			return nil, err
-		}
-
-		// Determine the response APDU type
-		var respAPDUType APDUType
-		switch apduType {
-		case APDU_GLO_GET_REQUEST:
-			respAPDUType = APDU_GLO_GET_RESPONSE
-		case APDU_GLO_SET_REQUEST:
-			respAPDUType = APDU_GLO_SET_RESPONSE
-		case APDU_GLO_ACTION_REQUEST:
-			respAPDUType = APDU_GLO_ACTION_RESPONSE
-		}
-
-		return append([]byte{byte(respAPDUType)}, append(encodedRespHeader, ciphertext...)...), nil
-
-	// Handle unsecured APDUs
-	case APDU_GET_REQUEST, APDU_SET_REQUEST, APDU_ACTION_REQUEST:
-		if securityPolicy != PolicyNone {
-			return nil, fmt.Errorf("security policy violation: unsecured request not allowed")
-		}
-
-		switch apduType {
-		case APDU_GET_REQUEST:
-			req := &GetRequest{}
-			err := req.Decode(src)
-			if err != nil {
-				return nil, err
-			}
-			return app.HandleGetRequest(req).Encode()
-		case APDU_SET_REQUEST:
-			req := &SetRequest{}
-			err := req.Decode(src)
-			if err != nil {
-				return nil, err
-			}
-			return app.HandleSetRequest(req).Encode()
-		case APDU_ACTION_REQUEST:
-			req := &ActionRequest{}
-			err := req.Decode(src)
-			if err != nil {
-				return nil, err
-			}
-			return app.HandleActionRequest(req).Encode()
-		}
+	header := &SecurityHeader{}
+	err = header.Decode(src[1:])
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("unsupported APDU type: %X", apduType)
+
+	// Check security policy
+	sc := header.SecurityControl
+	if (securityPolicy&PolicyAuthenticatedRequest != 0) && (sc != SecurityControlAuthenticationOnly && sc != SecurityControlAuthenticatedAndEncrypted) {
+		return nil, fmt.Errorf("security policy violation: authenticated request required")
+	}
+	if (securityPolicy&PolicyEncryptedRequest != 0) && (sc != SecurityControlEncryptionOnly && sc != SecurityControlAuthenticatedAndEncrypted) {
+		return nil, fmt.Errorf("security policy violation: encrypted request required")
+	}
+
+	var key []byte
+	suite, err := app.securitySetup.GetAttribute(3)
+	if err != nil {
+		return nil, err
+	}
+
+	if sc == SecurityControlAuthenticatedAndEncrypted || sc == SecurityControlEncryptionOnly {
+		key = app.securitySetup.GlobalUnicastKey
+	} else {
+		key = app.securitySetup.GlobalAuthenticationKey
+	}
+
+	serverSystemTitle, err := app.securitySetup.GetAttribute(5)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext, err := DecryptAndVerify(key, src[6:], serverSystemTitle.([]byte), header, suite.(SecuritySuite), app.lastFrameCounter)
+	if err != nil {
+		return nil, err
+	}
+	app.lastFrameCounter = header.FrameCounter
+
+	respAPDU, err := app.dispatchAPDU(plaintext)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap the response in a secured APDU
+	encodedResp, err := respAPDU.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	respHeader := &SecurityHeader{
+		SecurityControl: header.SecurityControl,
+		FrameCounter:    header.FrameCounter,
+	}
+
+	ciphertext, err := EncryptAndTag(key, encodedResp, serverSystemTitle.([]byte), respHeader, suite.(SecuritySuite))
+	if err != nil {
+		return nil, err
+	}
+
+	encodedRespHeader, err := respHeader.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine the response APDU type
+	var respAPDUType APDUType
+	switch apduType {
+	case APDU_GLO_GET_REQUEST:
+		respAPDUType = APDU_GLO_GET_RESPONSE
+	case APDU_GLO_SET_REQUEST:
+		respAPDUType = APDU_GLO_SET_RESPONSE
+	case APDU_GLO_ACTION_REQUEST:
+		respAPDUType = APDU_GLO_ACTION_RESPONSE
+	}
+
+	return append([]byte{byte(respAPDUType)}, append(encodedRespHeader, ciphertext...)...), nil
+}
+
+func (app *Application) handleUnsecuredAPDU(apduType APDUType, src []byte) ([]byte, error) {
+	policy, err := app.securitySetup.GetAttribute(2)
+	if err != nil {
+		return nil, err
+	}
+	securityPolicy := policy.(SecurityPolicy)
+
+	if securityPolicy != PolicyNone {
+		return nil, fmt.Errorf("security policy violation: unsecured request not allowed")
+	}
+
+	respAPDU, err := app.dispatchAPDU(src)
+	if err != nil {
+		return nil, err
+	}
+
+	return respAPDU.Encode()
+}
+
+func (app *Application) dispatchAPDU(src []byte) (APDU, error) {
+	apduType := APDUType(src[0])
+	switch apduType {
+	case APDU_GET_REQUEST:
+		req := &GetRequest{}
+		err := req.Decode(src)
+		if err != nil {
+			return nil, err
+		}
+		return app.HandleGetRequest(req), nil
+	case APDU_SET_REQUEST:
+		req := &SetRequest{}
+		err := req.Decode(src)
+		if err != nil {
+			return nil, err
+		}
+		return app.HandleSetRequest(req), nil
+	case APDU_ACTION_REQUEST:
+		req := &ActionRequest{}
+		err := req.Decode(src)
+		if err != nil {
+			return nil, err
+		}
+		return app.HandleActionRequest(req), nil
+	default:
+		return nil, fmt.Errorf("unsupported APDU type: %X", apduType)
+	}
 }
 
 // APDU is an interface for all APDU types.

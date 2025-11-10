@@ -23,6 +23,23 @@ func TestEncryptAndTag_DecryptAndVerify_Suite0(t *testing.T) {
 	assert.Equal(t, plaintext, decrypted)
 }
 
+func TestEncryptAndTag_DecryptAndVerify_Suite2(t *testing.T) {
+	key := []byte("0123456789ABCDEF0123456789ABCDEF")
+	plaintext := []byte("Hello, COSEM!")
+	serverSystemTitle := []byte("SERVER01")
+	header := &SecurityHeader{
+		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+		FrameCounter:    1,
+	}
+
+	ciphertext, err := EncryptAndTag(key, plaintext, serverSystemTitle, header, SecuritySuite2)
+	assert.NoError(t, err)
+
+	decrypted, err := DecryptAndVerify(key, ciphertext, serverSystemTitle, header, SecuritySuite2, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, plaintext, decrypted)
+}
+
 func TestEncryptAndTag_DecryptAndVerify_Suite1(t *testing.T) {
 	key := []byte("0123456789ABCDEF")
 	plaintext := []byte("Hello, COSEM!")
