@@ -39,7 +39,7 @@ func TestCMAC(t *testing.T) {
 	assert.NoError(t, err)
 	msg, err := hex.DecodeString("1122334455667700ffeeddccbbaa9988")
 	assert.NoError(t, err)
-	expected, err := hex.DecodeString("b563c6e94f1370243452e613247838a0")
+	expected, err := hex.DecodeString("51aa8ebefe937200c21e2518bd4a2edb")
 	assert.NoError(t, err)
 
 	c := gost3412128.NewCipher(key)
