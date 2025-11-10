@@ -2,22 +2,38 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"log"
 	"net"
 	"time"
 
 	"github.com/gvtret/spodes-go/pkg/hdlc"
+	"github.com/gvtret/spodes-go/pkg/wrapper"
 )
 
 func main() {
+	transport := flag.String("transport", "hdlc", "Transport layer to use: 'hdlc' or 'wrapper'")
+	flag.Parse()
+
 	serverAddr := "127.0.0.1:4059"
 	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil {
 		log.Fatalf("Failed to connect to server: %v", err)
 	}
 	defer conn.Close()
-	log.Printf("Connected to HDLC server at %s", serverAddr)
+	log.Printf("Connected to %s server at %s", *transport, serverAddr)
 
+	switch *transport {
+	case "hdlc":
+		runHDLCClient(conn)
+	case "wrapper":
+		runWrapperClient(conn)
+	default:
+		log.Fatalf("Invalid transport layer specified: %s", *transport)
+	}
+}
+
+func runHDLCClient(conn net.Conn) {
 	hdlcConn := hdlc.NewHDLCConnection(nil) // Use default config
 	// Client address is 0x02, Server is 0x01
 	hdlcConn.SetAddress([]byte{0x02}, []byte{0x01})
@@ -112,4 +128,33 @@ func main() {
 		log.Fatalf("Client failed to disconnect.")
 	}
 	log.Println("Client is disconnected.")
+}
+
+func runWrapperClient(conn net.Conn) {
+	wrapperConn := wrapper.NewConn(conn)
+
+	// Send a message
+	payload := []byte("hello, world!")
+	frame := &wrapper.Frame{
+		Version: wrapper.Version,
+		SrcAddr: 2,
+		DstAddr: 1,
+		Length:  uint16(len(payload)),
+		Payload: payload,
+	}
+
+	log.Printf("Client sending frame: %+v", frame)
+	err := wrapperConn.Send(frame)
+	if err != nil {
+		log.Fatalf("Failed to send frame: %v", err)
+	}
+
+	// Receive a response
+	respFrame, err := wrapperConn.Receive()
+	if err != nil {
+		log.Fatalf("Failed to receive frame: %v", err)
+	}
+	log.Printf("Client received frame: %+v", respFrame)
+
+	time.Sleep(1 * time.Second)
 }
