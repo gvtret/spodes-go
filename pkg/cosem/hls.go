@@ -71,6 +71,8 @@ func EncryptAndTag(key, plaintext, serverSystemTitle []byte, header *SecurityHea
 		return encryptGCM(key, plaintext, serverSystemTitle, header)
 	case SecuritySuite1, SecuritySuite2:
 		return encryptCBCandGMAC(key, plaintext, serverSystemTitle, header)
+	case SecuritySuite3:
+		return encryptKuznCmac(key, plaintext, serverSystemTitle, header)
 	default:
 		return nil, fmt.Errorf("unsupported security suite: %d", suite)
 	}
@@ -83,6 +85,8 @@ func DecryptAndVerify(key, ciphertext, serverSystemTitle []byte, header *Securit
 		return decryptGCM(key, ciphertext, serverSystemTitle, header, lastFrameCounter)
 	case SecuritySuite1, SecuritySuite2:
 		return decryptCBCandGMAC(key, ciphertext, serverSystemTitle, header, lastFrameCounter)
+	case SecuritySuite3:
+		return decryptKuznCmac(key, ciphertext, serverSystemTitle, header, lastFrameCounter)
 	default:
 		return nil, fmt.Errorf("unsupported security suite: %d", suite)
 	}
