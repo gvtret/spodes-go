@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/aead/cmac"
 	"github.com/ddulesov/gogost/gost34112012256"
-	"github.com/pkositsyn/kuznyechik"
+	"github.com/ddulesov/gogost/gost3412128"
 )
 
 const (
@@ -31,10 +31,7 @@ func ctrEncrypt(key, iv, plaintext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("invalid IV size for CTR mode")
 	}
 
-	block, err := kuznyechik.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
+	block := gost3412128.NewCipher(key)
 
 	stream := cipher.NewCTR(block, iv)
 	ciphertext := make([]byte, len(plaintext))
@@ -63,10 +60,7 @@ func encryptKuznCmac(key, plaintext, serverSystemTitle []byte, header *SecurityH
 		return nil, err
 	}
 
-	block, err := kuznyechik.NewCipher(ka)
-	if err != nil {
-		return nil, err
-	}
+	block := gost3412128.NewCipher(ka)
 	tag, err := cmac.Sum(append(additionalData, ciphertext...), block, 16)
 	if err != nil {
 		return nil, err
@@ -91,10 +85,7 @@ func decryptKuznCmac(key, ciphertext, serverSystemTitle []byte, header *Security
 	context := append(serverSystemTitle, byte(SecuritySuite3))
 	ke, ka := DeriveKeys(key, context)
 
-	block, err := kuznyechik.NewCipher(ka)
-	if err != nil {
-		return nil, err
-	}
+	block := gost3412128.NewCipher(ka)
 	expectedTag, err := cmac.Sum(append(additionalData, ciphertext...), block, 16)
 	if err != nil {
 		return nil, err

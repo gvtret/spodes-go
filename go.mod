@@ -7,7 +7,6 @@ toolchain go1.24.2
 require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1
 	github.com/ddulesov/gogost v1.0.0
-	github.com/pkositsyn/kuznyechik v0.4.0
 	github.com/stretchr/testify v1.10.0
 )
 

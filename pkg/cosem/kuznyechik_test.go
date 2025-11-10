@@ -3,7 +3,7 @@ package cosem
 import (
 	"encoding/hex"
 	"github.com/aead/cmac"
-	"github.com/pkositsyn/kuznyechik"
+	"github.com/ddulesov/gogost/gost3412128"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -13,8 +13,7 @@ func TestKuznyechikEncrypt(t *testing.T) {
 	plaintext, _ := hex.DecodeString("1122334455667700ffeeddccbbaa9988")
 	expected, _ := hex.DecodeString("7f679d90bebc24305a468d42b9d4edcd")
 
-	c, err := kuznyechik.NewCipher(key)
-	assert.NoError(t, err)
+	c := gost3412128.NewCipher(key)
 
 	ciphertext := make([]byte, 16)
 	c.Encrypt(ciphertext, plaintext)
@@ -27,8 +26,7 @@ func TestKuznyechikDecrypt(t *testing.T) {
 	ciphertext, _ := hex.DecodeString("7f679d90bebc24305a468d42b9d4edcd")
 	expected, _ := hex.DecodeString("1122334455667700ffeeddccbbaa9988")
 
-	c, err := kuznyechik.NewCipher(key)
-	assert.NoError(t, err)
+	c := gost3412128.NewCipher(key)
 	plaintext := make([]byte, 16)
 	c.Decrypt(plaintext, ciphertext)
 
@@ -44,8 +42,7 @@ func TestCMAC(t *testing.T) {
 	expected, err := hex.DecodeString("b563c6e94f1370243452e613247838a0")
 	assert.NoError(t, err)
 
-	c, err := kuznyechik.NewCipher(key)
-	assert.NoError(t, err)
+	c := gost3412128.NewCipher(key)
 
 	tag, err := cmac.Sum(msg, c, 16)
 	assert.NoError(t, err)
