@@ -2,8 +2,8 @@ package cosem
 
 import (
 	"encoding/hex"
-	"github.com/pkositsyn/kuznyechik"
 	"github.com/aead/cmac"
+	"github.com/pkositsyn/kuznyechik"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
