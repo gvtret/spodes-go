@@ -64,7 +64,7 @@ func runHDLCClient(conn net.Conn) {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err := hdlcConn.Handle(buf[:n])
+	responses, err := hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA response: %v", err)
 	}
@@ -79,7 +79,7 @@ func runHDLCClient(conn net.Conn) {
 	// 3. Send a large, segmented I-frame PDU
 	log.Println("Client sending: Large segmented PDU")
 	largePDU := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxyz"), 10) // 260 bytes > 128 byte maxFrameSize
-	frames, err := hdlcConn.SendData(largePDU)
+	frames, err := hdlcConn.Send(largePDU)
 	if err != nil {
 		log.Fatalf("Client failed to generate segmented I-frames: %v", err)
 	}
@@ -98,7 +98,7 @@ func runHDLCClient(conn net.Conn) {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err = hdlcConn.Handle(buf[:n])
+	responses, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling RR response: %v", err)
 	}
@@ -125,7 +125,7 @@ func runHDLCClient(conn net.Conn) {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err = hdlcConn.Handle(buf[:n])
+	responses, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA for DISC: %v", err)
 	}
@@ -139,30 +139,37 @@ func runHDLCClient(conn net.Conn) {
 }
 
 func runWrapperClient(conn net.Conn) {
-	wrapperConn := wrapper.NewConn(conn)
+	wrapperConn := wrapper.NewConnection(conn, nil)
 
 	// Send a message
 	payload := []byte("hello, world!")
-	frame := &wrapper.Frame{
-		Version: wrapper.Version,
-		SrcAddr: 2,
-		DstAddr: 1,
-		Length:  uint16(len(payload)),
-		Payload: payload,
+	frames, err := wrapperConn.Send(payload)
+	if err != nil {
+		log.Fatalf("Failed to create frame: %v", err)
 	}
 
-	log.Printf("Client sending frame: %+v", frame)
-	err := wrapperConn.Send(frame)
+	log.Printf("Client sending frame: %x", frames[0])
+	_, err = conn.Write(frames[0])
 	if err != nil {
 		log.Fatalf("Failed to send frame: %v", err)
 	}
 
 	// Receive a response
-	respFrame, err := wrapperConn.Receive()
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
 	if err != nil {
-		log.Fatalf("Failed to receive frame: %v", err)
+		log.Fatalf("Failed to read response: %v", err)
 	}
-	log.Printf("Client received frame: %+v", respFrame)
+	log.Printf("Client received %d bytes: %x", n, buf[:n])
+	_, err = wrapperConn.Receive(buf[:n])
+	if err != nil {
+		log.Fatalf("Client error handling response: %v", err)
+	}
+	respPDU, err := wrapperConn.Read()
+	if err != nil {
+		log.Fatalf("Failed to read PDU: %v", err)
+	}
+	log.Printf("Client received PDU: %s", string(respPDU))
 
 	time.Sleep(1 * time.Second)
 }

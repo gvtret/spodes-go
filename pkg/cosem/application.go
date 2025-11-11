@@ -3,6 +3,7 @@ package cosem
 import (
 	"fmt"
 	"github.com/gvtret/spodes-go/pkg/axdr"
+	"github.com/gvtret/spodes-go/pkg/transport"
 )
 
 // Application represents a COSEM application layer instance.
@@ -11,13 +12,15 @@ type Application struct {
 	objects          map[string]BaseInterface
 	associationLN    *AssociationLN
 	securitySetup    *SecuritySetup
+	transport        transport.Transport
 	lastFrameCounter uint32
 }
 
 // NewApplication creates a new COSEM application instance.
-func NewApplication(associationLN *AssociationLN, securitySetup *SecuritySetup) *Application {
+func NewApplication(transport transport.Transport, associationLN *AssociationLN, securitySetup *SecuritySetup) *Application {
 	app := &Application{
 		objects:       make(map[string]BaseInterface),
+		transport:     transport,
 		associationLN: associationLN,
 		securitySetup: securitySetup,
 	}

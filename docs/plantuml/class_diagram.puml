@@ -13,54 +13,62 @@ skinparam class {
 }
 
 ' interfaces
+interface Transport {
+    + Connect() ([]byte, error)
+    + Disconnect() ([]byte, error)
+    + IsConnected() bool
+    + Send(pdu []byte) ([][]byte, error)
+    + Receive(src []byte) ([][]byte, error)
+    + Read() ([]byte, error)
+}
+
 interface BaseInterface {
     + GetClassID() uint16
     + GetInstanceID() ObisCode
     + GetAttribute(attributeID byte) (interface{}, error)
     + SetAttribute(attributeID byte, value interface{}) error
     + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
-    + GetAttributeAccess(attributeID byte) AttributeAccess
-    + GetMethodAccess(methodID byte) MethodAccess
-    + SetPreReadCallback(cb PreReadCallback)
-    + SetPostReadCallback(cb PostReadCallback)
-    + SetPreWriteCallback(cb PreWriteCallback)
-    + SetPostWriteCallback(cb PostWriteCallback)
-    + SetPreExecuteCallback(cb PreExecuteCallback)
-    + SetPostExecuteCallback(cb PostExecuteCallback)
-    + SetCallbackContext(ctx interface{})
 }
 
 ' classes
+class Application {
+    - transport: Transport
+    + HandleAPDU(src []byte) ([]byte, error)
+}
+
+class HDLCConnection {
+    + Connect() ([]byte, error)
+    + Disconnect() ([]byte, error)
+    + IsConnected() bool
+    + Send(pdu []byte) ([][]byte, error)
+    + Receive(src []byte) ([][]byte, error)
+    + Read() ([]byte, error)
+}
+
+class "wrapper.Connection" as WrapperConnection {
+    + Connect() ([]byte, error)
+    + Disconnect() ([]byte, error)
+    + IsConnected() bool
+    + Send(pdu []byte) ([][]byte, error)
+    + Receive(src []byte) ([][]byte, error)
+    + Read() ([]byte, error)
+}
+
 class BaseImpl {
-    + ClassID: uint16
-    + InstanceID: ObisCode
-    + Attributes: map[byte]AttributeDescriptor
-    + Methods: map[byte]MethodDescriptor
-    + PreReadCallback: PreReadCallback
-    + PostReadCallback: PostReadCallback
-    + PreWriteCallback: PreWriteCallback
-    + PostWriteCallback: PostWriteCallback
-    + PreExecuteCallback: PreExecuteCallback
-    + PostExecuteCallback: PostExecuteCallback
-    + CallbackContext: interface{}
     + GetAttribute(attributeID byte) (interface{}, error)
     + SetAttribute(attributeID byte, value interface{}) error
     + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
 }
 
-class Data {
-    + GetAttribute(attributeID byte) (interface{}, error)
-    + SetAttribute(attributeID byte, value interface{}) error
-    + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
-}
-
-class Register {
-    + GetAttribute(attributeID byte) (interface{}, error)
-    + SetAttribute(attributeID byte, value interface{}) error
-    + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
-}
+class Data {}
+class Register {}
 
 ' relationships
+Application o-- Transport
+Transport <|.. HDLCConnection
+Transport <|.. WrapperConnection
+
+Application o-- BaseInterface
 BaseInterface <|.. BaseImpl
 BaseImpl <|-- Data
 BaseImpl <|-- Register

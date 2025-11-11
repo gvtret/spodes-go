@@ -74,13 +74,10 @@ func handleHDLCConnection(conn net.Conn) {
 
 		log.Printf("Server received %d bytes: %x", n, buf[:n])
 
-		responses, err := hdlcConn.Handle(buf[:n])
+		responses, err := hdlcConn.Receive(buf[:n])
 		if err != nil {
 			log.Printf("Error handling HDLC frame: %v", err)
-			if hdlcErr, ok := err.(*hdlc.HDLCError); ok && hdlcErr.ShouldExit {
-				return
-			}
-			continue
+			return
 		}
 
 		for _, resp := range responses {
@@ -107,28 +104,40 @@ func handleWrapperConnection(conn net.Conn) {
 	defer conn.Close()
 	log.Printf("Accepted WRAPPER connection from %s", conn.RemoteAddr())
 
-	wrapperConn := wrapper.NewConn(conn)
+	wrapperConn := wrapper.NewConnection(conn, nil)
 
 	for {
-		frame, err := wrapperConn.Receive()
+		buf := make([]byte, 1024)
+		n, err := conn.Read(buf)
 		if err != nil {
-			log.Printf("Error receiving wrapper frame: %v", err)
+			log.Printf("Error reading from connection: %v", err)
 			return
 		}
 
-		log.Printf("Server received wrapper frame: %+v", frame)
+		log.Printf("Server received %d bytes: %x", n, buf[:n])
 
-		// Echo the payload back
-		respFrame := &wrapper.Frame{
-			Version: wrapper.Version,
-			SrcAddr: frame.DstAddr,
-			DstAddr: frame.SrcAddr,
-			Length:  frame.Length,
-			Payload: frame.Payload,
+		_, err = wrapperConn.Receive(buf[:n])
+		if err != nil {
+			log.Printf("Error handling wrapper frame: %v", err)
+			return
 		}
 
-		log.Printf("Server sending response frame: %+v", respFrame)
-		err = wrapperConn.Send(respFrame)
+		pdu, err := wrapperConn.Read()
+		if err != nil {
+			log.Printf("Error reading PDU: %v", err)
+			return
+		}
+		log.Printf("Server received PDU: %s", string(pdu))
+
+		// Echo the PDU back
+		frames, err := wrapperConn.Send(pdu)
+		if err != nil {
+			log.Printf("Error creating response frame: %v", err)
+			return
+		}
+
+		log.Printf("Server sending response frame: %x", frames[0])
+		_, err = conn.Write(frames[0])
 		if err != nil {
 			log.Printf("Error sending wrapper frame: %v", err)
 			return

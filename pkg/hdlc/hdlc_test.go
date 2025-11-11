@@ -93,9 +93,9 @@ func TestSegmentationAndReassembly(t *testing.T) {
 
 	longPDU := bytes.Repeat([]byte("s"), client.maxFrameSize*3+10)
 
-	frames, err := client.SendData(longPDU)
+	frames, err := client.Send(longPDU)
 	if err != nil {
-		t.Fatalf("Client.SendData for segmented PDU failed: %v", err)
+		t.Fatalf("Client.Send for segmented PDU failed: %v", err)
 	}
 
 	for _, frameBytes := range frames {
@@ -129,15 +129,15 @@ func TestSlidingWindow(t *testing.T) {
 	client.state = StateConnected
 
 	for i := 0; i < client.windowSize; i++ {
-		_, err := client.SendData([]byte{byte(i)})
+		_, err := client.Send([]byte{byte(i)})
 		if err != nil {
-			t.Fatalf("SendData should not have failed yet: %v", err)
+			t.Fatalf("Send should not have failed yet: %v", err)
 		}
 	}
 
-	_, err := client.SendData([]byte("should fail"))
+	_, err := client.Send([]byte("should fail"))
 	if err == nil {
-		t.Fatal("SendData should have failed because the window is full")
+		t.Fatal("Send should have failed because the window is full")
 	}
 }
 
@@ -156,8 +156,8 @@ func TestRejectFrame(t *testing.T) {
 	client.state = StateConnected
 	server.state = StateConnected
 
-	_, _ = client.SendData([]byte("frame1"))
-	frames, _ := client.SendData([]byte("frame2"))
+	_, _ = client.Send([]byte("frame1"))
+	frames, _ := client.Send([]byte("frame2"))
 	frame2Bytes := frames[0]
 
 	frame2, err := DecodeFrame(frame2Bytes[1 : len(frame2Bytes)-1])
@@ -207,9 +207,9 @@ func TestReceiverNotReady(t *testing.T) {
 		t.Fatal("Client should have marked the peer as not ready")
 	}
 
-	_, err = client.SendData([]byte("test"))
+	_, err = client.Send([]byte("test"))
 	if err == nil {
-		t.Fatal("SendData should fail when the peer is not ready")
+		t.Fatal("Send should fail when the peer is not ready")
 	}
 }
 
@@ -302,10 +302,10 @@ func TestSelectiveReject(t *testing.T) {
 	server.state = StateConnected
 
 	// Send frames 0, 1, 3 (simulating lost frame 2)
-	frames0, _ := client.SendData([]byte("frame0"))
-	frames1, _ := client.SendData([]byte("frame1"))
+	frames0, _ := client.Send([]byte("frame0"))
+	frames1, _ := client.Send([]byte("frame1"))
 	client.sendSeq++ // Skip frame 2
-	frames3, _ := client.SendData([]byte("frame3"))
+	frames3, _ := client.Send([]byte("frame3"))
 
 	// Server receives frame 0
 	frame0, _ := DecodeFrame(frames0[0][1 : len(frames0[0])-1])
@@ -336,7 +336,7 @@ func TestRetransmission(t *testing.T) {
 	client.state = StateConnected
 
 	// Send a frame
-	client.SendData([]byte("frame0"))
+	client.Send([]byte("frame0"))
 
 	// Wait for retransmission
 	select {
