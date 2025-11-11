@@ -46,7 +46,7 @@ func main() {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	_, err = hdlcConn.Handle(buf[:n])
+	_, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA response: %v", err)
 	}
@@ -59,7 +59,7 @@ func main() {
 	// 3. Send a large, segmented I-frame PDU
 	log.Println("Client sending: Large segmented PDU")
 	largePDU := bytes.Repeat([]byte("udp test "), 20)
-	frames, err := hdlcConn.SendData(largePDU)
+	frames, err := hdlcConn.Send(largePDU)
 	if err != nil {
 		log.Fatalf("Client failed to generate segmented I-frames: %v", err)
 	}
@@ -78,7 +78,7 @@ func main() {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	_, err = hdlcConn.Handle(buf[:n])
+	_, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling RR response: %v", err)
 	}
@@ -102,7 +102,7 @@ func main() {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	_, err = hdlcConn.Handle(buf[:n])
+	_, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA for DISC: %v", err)
 	}

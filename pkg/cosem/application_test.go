@@ -16,7 +16,7 @@ func TestApplication_HandleGetRequest(t *testing.T) {
 	gak := []byte("global_auth_key")
 	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
 
-	app := NewApplication(associationLN, securitySetup)
+	app := NewApplication(nil, associationLN, securitySetup)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
 	dataObj, _ := NewData(*obis, uint32(12345))
@@ -96,7 +96,7 @@ func TestApplication_HandleSetRequest(t *testing.T) {
 	guek := []byte("global_unicast_key")
 	gak := []byte("global_auth_key")
 	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
-	app := NewApplication(associationLN, securitySetup)
+	app := NewApplication(nil, associationLN, securitySetup)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
 	dataObj, _ := NewData(*obis, uint32(12345))
@@ -175,7 +175,7 @@ func TestApplication_HandleActionRequest(t *testing.T) {
 	guek := []byte("global_unicast_key")
 	gak := []byte("global_auth_key")
 	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
-	app := NewApplication(associationLN, securitySetup)
+	app := NewApplication(nil, associationLN, securitySetup)
 
 	obis, _ := NewObisCodeFromString("1.0.0.4.0.255")
 	scalerUnit := ScalerUnit{Scaler: 0, Unit: UnitCount}
@@ -259,7 +259,7 @@ func TestApplication_SecurityPolicy(t *testing.T) {
 	guek := []byte("0123456789ABCDEF")
 	gak := []byte("0123456789ABCDEF")
 	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
-	app := NewApplication(associationLN, securitySetup)
+	app := NewApplication(nil, associationLN, securitySetup)
 	app.securitySetup.SetAttribute(2, PolicyAuthenticatedRequest)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")

@@ -53,7 +53,7 @@ func handlePacket(conn *net.UDPConn, remoteAddr *net.UDPAddr, data []byte) {
 
 	log.Printf("Server received %d bytes from %s: %x", len(data), remoteAddr.String(), data)
 
-	responses, err := hdlcConn.Handle(data)
+	responses, err := hdlcConn.Receive(data)
 	if err != nil {
 		log.Printf("Error handling HDLC data from %s: %v", remoteAddr.String(), err)
 		return

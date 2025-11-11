@@ -83,7 +83,7 @@ func TestApplication_HandleAPDU_Secured(t *testing.T) {
 	guek := []byte("0123456789ABCDEF")
 	gak := []byte("0123456789ABCDEF")
 	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
-	app := NewApplication(associationLN, securitySetup)
+	app := NewApplication(nil, associationLN, securitySetup)
 	app.securitySetup.SetAttribute(3, SecuritySuite1)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")

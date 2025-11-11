@@ -1,72 +1,108 @@
 package wrapper
 
 import (
+	"bytes"
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestConnSendReceive(t *testing.T) {
-	// Create a mock TCP connection
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
-
-	// Create a server-side Conn
-	serverConn := NewConn(server)
-
-	// Create a client-side Conn
-	clientConn := NewConn(client)
-
-	// Create a frame to send
-	frameToSend := &Frame{
-		Version: Version,
-		SrcAddr: 1,
-		DstAddr: 2,
-		Length:  5,
-		Payload: []byte("hello"),
-	}
-
-	// Send the frame from the client
-	go func() {
-		clientConn.Send(frameToSend)
-	}()
-
-	// Receive the frame on the server
-	receivedFrame, err := serverConn.Receive()
-	assert.NoError(t, err)
-
-	// Check that the received frame is correct
-	assert.Equal(t, frameToSend.Version, receivedFrame.Version)
-	assert.Equal(t, frameToSend.SrcAddr, receivedFrame.SrcAddr)
-	assert.Equal(t, frameToSend.DstAddr, receivedFrame.DstAddr)
-	assert.Equal(t, frameToSend.Length, receivedFrame.Length)
-	assert.Equal(t, frameToSend.Payload, receivedFrame.Payload)
+// mockConn is a mock net.Conn for testing.
+type mockConn struct {
+	net.Conn
+	readBuffer  bytes.Buffer
+	writeBuffer bytes.Buffer
+	mutex       sync.Mutex
+	closed      bool
 }
 
-func TestConnReceiveInvalidVersion(t *testing.T) {
-	// Create a mock TCP connection
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
+func (c *mockConn) Read(b []byte) (n int, err error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.closed {
+		return 0, net.ErrClosed
+	}
+	return c.readBuffer.Read(b)
+}
 
-	// Create a server-side Conn
-	serverConn := NewConn(server)
+func (c *mockConn) Write(b []byte) (n int, err error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.closed {
+		return 0, net.ErrClosed
+	}
+	return c.writeBuffer.Write(b)
+}
 
-	// Send an invalid frame from the client
-	go func() {
-		invalidFrame := &Frame{
-			Version: 999, // Invalid version
-			SrcAddr: 1,
-			DstAddr: 2,
-			Length:  5,
-			Payload: []byte("hello"),
-		}
-		encoded, _ := invalidFrame.Encode()
-		client.Write(encoded)
-	}()
+func (c *mockConn) Close() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.closed = true
+	return nil
+}
 
-	_, err := serverConn.Receive()
+func TestConnectionSendAndReceive(t *testing.T) {
+	mock := &mockConn{}
+	config := DefaultConfig()
+	conn := NewConnection(mock, config)
+
+	pduToSend := []byte("hello world")
+
+	// Test Send
+	frames, err := conn.Send(pduToSend)
+	assert.NoError(t, err)
+	assert.Len(t, frames, 1)
+
+	// Simulate sending the frame over the network
+	mock.readBuffer.Write(frames[0])
+
+	// Test Receive
+	_, err = conn.Receive(mock.readBuffer.Bytes())
+	assert.NoError(t, err)
+
+	// Test Read
+	receivedPDU, err := conn.Read()
+	assert.NoError(t, err)
+	assert.Equal(t, pduToSend, receivedPDU)
+}
+
+func TestConnectionReadTimeout(t *testing.T) {
+	mock := &mockConn{}
+	config := DefaultConfig()
+	config.ReadTimeout = 50 * time.Millisecond
+	conn := NewConnection(mock, config)
+
+	_, err := conn.Read()
+	assert.Error(t, err)
+	assert.Equal(t, "read timeout", err.Error())
+}
+
+func TestConnectionInvalidFrame(t *testing.T) {
+	mock := &mockConn{}
+	config := DefaultConfig()
+	conn := NewConnection(mock, config)
+
+	// Send a corrupted frame (e.g., wrong version)
+	invalidFrame := &Frame{
+		Version: 999, // Invalid
+		SrcAddr: config.SrcAddr,
+		DstAddr: config.DstAddr,
+		Length:  4,
+		Payload: []byte("test"),
+	}
+	encoded, _ := invalidFrame.Encode()
+	mock.readBuffer.Write(encoded)
+
+	// The Receive method should handle this gracefully
+	_, err := conn.Receive(mock.readBuffer.Bytes())
+	assert.NoError(t, err)
+
+	// Since the frame was invalid, no PDU should be available to read.
+	// We expect a timeout here.
+	config.ReadTimeout = 50 * time.Millisecond
+	_, err = conn.Read()
 	assert.Error(t, err)
 }

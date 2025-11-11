@@ -5,7 +5,12 @@ import (
 	"encoding/binary"
 	"sync"
 	"time"
+
+	"github.com/gvtret/spodes-go/pkg/common"
+	"github.com/gvtret/spodes-go/pkg/transport"
 )
+
+var _ transport.Transport = (*HDLCConnection)(nil)
 
 // Config holds the configuration parameters for an HDLC connection.
 type Config struct {
@@ -29,30 +34,20 @@ func DefaultConfig() *Config {
 	}
 }
 
-// HDLCError represents an HDLC-specific error
-type HDLCError struct {
-	Message    string
-	ShouldExit bool // Indicates if the connection should be terminated
-}
-
-func (e *HDLCError) Error() string {
-	return e.Message
-}
-
 // Predefined HDLC errors
 var (
-	ErrNotConnected              = &HDLCError{Message: "not connected", ShouldExit: true}
-	ErrAlreadyConnected          = &HDLCError{Message: "already connected or connecting"}
-	ErrInvalidUA                 = &HDLCError{Message: "did not receive UA in response to SNRM"}
-	ErrAckTimeout                = &HDLCError{Message: "ack timeout"}
-	ErrInactivityTimeout         = &HDLCError{Message: "inactivity timeout", ShouldExit: true}
-	ErrUnexpectedFrame           = &HDLCError{Message: "unexpected frame"}
-	ErrInvalidFrame              = &HDLCError{Message: "invalid frame"}
-	ErrConnectionTerminated      = &HDLCError{Message: "connection terminated", ShouldExit: true}
-	ErrUnexpectedDisconnect      = &HDLCError{Message: "unexpected disconnect", ShouldExit: true}
-	ErrFrameRejected             = &HDLCError{Message: "frame rejected", ShouldExit: true}
-	ErrDestinationAddressMissing = &HDLCError{Message: "destination address is missing"}
-	ErrSourceAddressMissing      = &HDLCError{Message: "source address is missing"}
+	ErrNotConnected              = common.NewError(common.ErrConnectionClosed, "not connected")
+	ErrAlreadyConnected          = common.NewError(common.ErrConnectionFailed, "already connected or connecting")
+	ErrInvalidUA                 = common.NewError(common.ErrHDLCInvalidFrame, "did not receive UA in response to SNRM")
+	ErrAckTimeout                = common.NewError(common.ErrReadTimeout, "ack timeout")
+	ErrInactivityTimeout         = common.NewError(common.ErrReadTimeout, "inactivity timeout")
+	ErrUnexpectedFrame           = common.NewError(common.ErrHDLCInvalidFrame, "unexpected frame")
+	ErrInvalidFrame              = common.NewError(common.ErrHDLCInvalidFrame, "invalid frame")
+	ErrConnectionTerminated      = common.NewError(common.ErrConnectionClosed, "connection terminated")
+	ErrUnexpectedDisconnect      = common.NewError(common.ErrConnectionClosed, "unexpected disconnect")
+	ErrFrameRejected             = common.NewError(common.ErrHdlcFrameRejected, "frame rejected")
+	ErrDestinationAddressMissing = common.NewError(common.ErrConnectionFailed, "destination address is missing")
+	ErrSourceAddressMissing      = common.NewError(common.ErrConnectionFailed, "source address is missing")
 )
 
 // Define connection states
@@ -282,8 +277,8 @@ func (c *HDLCConnection) handleConnectedState(frame *HDLCFrame) ([]byte, error) 
 	return nil, nil
 }
 
-// SendData generates one or more I-frames for the given data payload, handling segmentation if necessary.
-func (c *HDLCConnection) SendData(data []byte) ([][]byte, error) {
+// Send generates one or more I-frames for the given data payload, handling segmentation if necessary.
+func (c *HDLCConnection) Send(data []byte) ([][]byte, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -292,11 +287,11 @@ func (c *HDLCConnection) SendData(data []byte) ([][]byte, error) {
 	}
 
 	if (c.sendSeq-c.lastAckedSeq)%8 >= uint8(c.windowSize) {
-		return nil, &HDLCError{Message: "sending window is full"}
+		return nil, common.NewError(common.ErrHDLCWindowFull, "sending window is full")
 	}
 
 	if !c.isPeerReceiverReady {
-		return nil, &HDLCError{Message: "peer receiver is not ready (RNR)"}
+		return nil, common.NewError(common.ErrConnectionFailed, "peer receiver is not ready (RNR)")
 	}
 
 	var frames [][]byte
@@ -361,8 +356,8 @@ func (c *HDLCConnection) Disconnect() ([]byte, error) {
 	return EncodeFrame(discFrame.DA, discFrame.SA, discFrame.Control, discFrame.Information, discFrame.Segmented)
 }
 
-// Handle processes an incoming byte stream, finds complete frames, and returns any response frames
-func (c *HDLCConnection) Handle(data []byte) ([][]byte, error) {
+// Receive processes an incoming byte stream, finds complete frames, and returns any response frames
+func (c *HDLCConnection) Receive(data []byte) ([][]byte, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -431,7 +426,7 @@ func (c *HDLCConnection) Read() ([]byte, error) {
 	case pdu := <-c.ReassembledData:
 		return pdu, nil
 	case <-time.After(c.inactivityTimeout):
-		return nil, &HDLCError{Message: "read timeout"}
+		return nil, common.NewError(common.ErrReadTimeout, "read timeout")
 	}
 }
 
