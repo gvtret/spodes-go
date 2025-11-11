@@ -340,8 +340,10 @@ func TestRetransmission(t *testing.T) {
 
 	// Wait for retransmission
 	select {
-	case ns := <-client.retransmitChan:
-		assert.Equal(t, byte(0), ns)
+	case frameBytes := <-client.RetransmitFrames:
+		frame, err := DecodeFrame(frameBytes[1 : len(frameBytes)-1])
+		assert.NoError(t, err)
+		assert.Equal(t, uint8(0), frame.NS)
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Retransmission did not occur in time")
 	}

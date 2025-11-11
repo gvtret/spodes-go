@@ -35,9 +35,16 @@ func main() {
 
 func runHDLCClient(conn net.Conn) {
 	config := hdlc.DefaultConfig()
-	config.SrcAddr = []byte{0x02}  // Client address
+	config.SrcAddr = []byte{0x02} // Client address
 	config.DestAddr = []byte{0x01} // Server address
 	hdlcConn := hdlc.NewHDLCConnection(config)
+
+	go func() {
+		for frame := range hdlcConn.RetransmitFrames {
+			log.Printf("Client retransmitting frame: %x", frame)
+			conn.Write(frame)
+		}
+	}()
 
 	// 1. Send SNRM to connect
 	log.Println("Client sending: SNRM")
