@@ -9,19 +9,23 @@ import (
 
 // Config holds the configuration parameters for an HDLC connection.
 type Config struct {
-	WindowSize           int
-	MaxFrameSize         int
-	InactivityTimeout    time.Duration
-	FrameAssemblyTimeout time.Duration
+	WindowSize            int
+	MaxFrameSize          int
+	InactivityTimeout     time.Duration
+	FrameAssemblyTimeout  time.Duration
+	RetransmissionTimeout time.Duration
+	DestAddr              []byte
+	SrcAddr               []byte
 }
 
 // DefaultConfig returns a new Config object with default values.
 func DefaultConfig() *Config {
 	return &Config{
-		WindowSize:           MaxWindowSize,
-		MaxFrameSize:         128,
-		InactivityTimeout:    time.Duration(InactivityTimeout) * time.Millisecond,
-		FrameAssemblyTimeout: 2 * time.Second,
+		WindowSize:            MaxWindowSize,
+		MaxFrameSize:          128,
+		InactivityTimeout:     time.Duration(InactivityTimeout) * time.Millisecond,
+		FrameAssemblyTimeout:  2 * time.Second,
+		RetransmissionTimeout: 5 * time.Second,
 	}
 }
 
@@ -60,33 +64,28 @@ const (
 
 // HDLCConnection manages the HDLC connection
 type HDLCConnection struct {
-	state                string
-	destAddr             []byte
-	srcAddr              []byte
-	sendSeq              uint8
-	recvSeq              uint8
-	lastAckedSeq         uint8
-	windowSize           int
-	maxFrameSize         int
-	sentFrames           map[uint8]*HDLCFrame
-	recvBuffer           map[uint8]*HDLCFrame
-	segmentBuffer        []byte
-	ReassembledData      chan []byte
-	mutex                sync.Mutex
-	ackChannel           chan uint8
-	isPeerReceiverReady  bool
-	inactivityTimeout    time.Duration
-	frameAssemblyTimeout time.Duration
-	lastActivity         time.Time
-	readBuffer           bytes.Buffer
-}
-
-// SetAddress sets the destination and source addresses for the connection
-func (c *HDLCConnection) SetAddress(dest, src []byte) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	c.destAddr = dest
-	c.srcAddr = src
+	state                 string
+	destAddr              []byte
+	srcAddr               []byte
+	sendSeq               uint8
+	recvSeq               uint8
+	lastAckedSeq          uint8
+	windowSize            int
+	maxFrameSize          int
+	sentFrames            map[uint8]*HDLCFrame
+	sentTimes             map[uint8]time.Time
+	recvBuffer            map[uint8]*HDLCFrame
+	segmentBuffer         []byte
+	ReassembledData       chan []byte
+	RetransmitFrames      chan []byte
+	mutex                 sync.Mutex
+	ackChannel            chan uint8
+	isPeerReceiverReady   bool
+	inactivityTimeout     time.Duration
+	frameAssemblyTimeout  time.Duration
+	retransmissionTimeout time.Duration
+	lastActivity          time.Time
+	readBuffer            bytes.Buffer
 }
 
 // NewHDLCConnection creates a new HDLC connection with the given configuration.
@@ -95,19 +94,50 @@ func NewHDLCConnection(config *Config) *HDLCConnection {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	return &HDLCConnection{
-		state:                StateDisconnected,
-		windowSize:           config.WindowSize,
-		maxFrameSize:         config.MaxFrameSize,
-		inactivityTimeout:    config.InactivityTimeout,
-		frameAssemblyTimeout: config.FrameAssemblyTimeout,
-		sentFrames:           make(map[uint8]*HDLCFrame),
-		recvBuffer:           make(map[uint8]*HDLCFrame),
-		segmentBuffer:        make([]byte, 0),
-		ReassembledData:      make(chan []byte, 10),
-		ackChannel:           make(chan uint8, 1),
-		isPeerReceiverReady:  true,
-		readBuffer:           bytes.Buffer{},
+	conn := &HDLCConnection{
+		state:                 StateDisconnected,
+		windowSize:            config.WindowSize,
+		maxFrameSize:          config.MaxFrameSize,
+		inactivityTimeout:     config.InactivityTimeout,
+		frameAssemblyTimeout:  config.FrameAssemblyTimeout,
+		retransmissionTimeout: config.RetransmissionTimeout,
+		destAddr:              config.DestAddr,
+		srcAddr:               config.SrcAddr,
+		sentFrames:            make(map[uint8]*HDLCFrame),
+		sentTimes:             make(map[uint8]time.Time),
+		recvBuffer:            make(map[uint8]*HDLCFrame),
+		segmentBuffer:         make([]byte, 0),
+		ReassembledData:       make(chan []byte, 10),
+		RetransmitFrames:      make(chan []byte, 10),
+		ackChannel:            make(chan uint8, 1),
+		isPeerReceiverReady:   true,
+		readBuffer:            bytes.Buffer{},
+	}
+	go conn.retransmissionDaemon()
+	return conn
+}
+
+func (c *HDLCConnection) retransmissionDaemon() {
+	ticker := time.NewTicker(c.retransmissionTimeout / 2)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		c.mutex.Lock()
+		for ns, t := range c.sentTimes {
+			if time.Since(t) > c.retransmissionTimeout {
+				if frameToResend, ok := c.sentFrames[ns]; ok {
+					encodedFrame, err := EncodeFrame(frameToResend.DA, frameToResend.SA, frameToResend.Control, frameToResend.Information, frameToResend.Segmented)
+					if err == nil {
+						// Non-blocking send to avoid deadlock
+						select {
+						case c.RetransmitFrames <- encodedFrame:
+						default:
+						}
+					}
+				}
+			}
+		}
+		c.mutex.Unlock()
 	}
 }
 
@@ -166,23 +196,46 @@ func (c *HDLCConnection) HandleFrame(frame *HDLCFrame) ([]byte, error) {
 func (c *HDLCConnection) handleConnectedState(frame *HDLCFrame) ([]byte, error) {
 	switch frame.Type {
 	case FrameTypeI:
+		// Buffer out-of-order frames
 		if frame.NS != c.recvSeq {
-			rejFrame := &HDLCFrame{DA: frame.SA, SA: frame.DA, Type: FrameTypeS, Control: SFrameREJ | (c.recvSeq << 5)}
-			return EncodeFrame(rejFrame.DA, rejFrame.SA, rejFrame.Control, rejFrame.Information, rejFrame.Segmented)
+			if _, exists := c.recvBuffer[frame.NS]; !exists {
+				c.recvBuffer[frame.NS] = frame
+			}
+			// Send SREJ for the missing frame
+			srejFrame := &HDLCFrame{DA: frame.SA, SA: frame.DA, Type: FrameTypeS, Control: SFrameSREJ | (c.recvSeq << 5)}
+			return EncodeFrame(srejFrame.DA, srejFrame.SA, srejFrame.Control, srejFrame.Information, srejFrame.Segmented)
 		}
 
+		// Process the current in-order frame
 		c.segmentBuffer = append(c.segmentBuffer, frame.Information...)
-
 		if !frame.Segmented {
 			if c.ReassembledData != nil {
 				c.ReassembledData <- c.segmentBuffer
 			}
 			c.segmentBuffer = make([]byte, 0)
 		}
-
 		c.recvSeq = (c.recvSeq + 1) % 8
+
+		// Process any buffered frames that are now in order
+		for {
+			if bufferedFrame, ok := c.recvBuffer[c.recvSeq]; ok {
+				c.segmentBuffer = append(c.segmentBuffer, bufferedFrame.Information...)
+				if !bufferedFrame.Segmented {
+					if c.ReassembledData != nil {
+						c.ReassembledData <- c.segmentBuffer
+					}
+					c.segmentBuffer = make([]byte, 0)
+				}
+				delete(c.recvBuffer, c.recvSeq)
+				c.recvSeq = (c.recvSeq + 1) % 8
+			} else {
+				break
+			}
+		}
+
 		rrFrame := &HDLCFrame{DA: frame.SA, SA: frame.DA, Type: FrameTypeS, Control: SFrameRR | (c.recvSeq << 5)}
 		return EncodeFrame(rrFrame.DA, rrFrame.SA, rrFrame.Control, rrFrame.Information, rrFrame.Segmented)
+
 	case FrameTypeU:
 		if frame.Control == UFrameDISC {
 			c.state = StateDisconnected
@@ -191,13 +244,17 @@ func (c *HDLCConnection) handleConnectedState(frame *HDLCFrame) ([]byte, error) 
 		}
 	case FrameTypeS:
 		nr := (frame.Control >> 5) & 0x07
-		c.lastAckedSeq = nr
 
-		for i := c.lastAckedSeq; i != c.sendSeq; i = (i + 1) % 8 {
-			if _, ok := c.sentFrames[i]; !ok {
-				break
+		switch frame.Control & 0x0F {
+		case SFrameRR, SFrameREJ, SFrameSREJ:
+			c.lastAckedSeq = nr
+			for i := c.lastAckedSeq; i != c.sendSeq; i = (i + 1) % 8 {
+				if _, ok := c.sentFrames[i]; !ok {
+					break
+				}
+				delete(c.sentFrames, i)
+				delete(c.sentTimes, i)
 			}
-			delete(c.sentFrames, i)
 		}
 
 		switch frame.Control & 0x0F {
@@ -207,6 +264,10 @@ func (c *HDLCConnection) handleConnectedState(frame *HDLCFrame) ([]byte, error) 
 			c.isPeerReceiverReady = false
 		case SFrameREJ:
 			// log.Printf("Received REJ for frame %d. Retransmission needed.", nr)
+		case SFrameSREJ:
+			if frameToResend, ok := c.sentFrames[nr]; ok {
+				return EncodeFrame(frameToResend.DA, frameToResend.SA, frameToResend.Control, frameToResend.Information, frameToResend.Segmented)
+			}
 		}
 	case UFrameFRMR:
 		// Receiving a Frame Reject is a fatal error for the connection
@@ -274,6 +335,7 @@ func (c *HDLCConnection) SendData(data []byte) ([][]byte, error) {
 		frames = append(frames, encodedFrame)
 
 		c.sentFrames[frame.NS] = frame
+		c.sentTimes[frame.NS] = time.Now()
 		c.sendSeq = (c.sendSeq + 1) % 8
 	}
 

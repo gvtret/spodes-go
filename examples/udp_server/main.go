@@ -42,10 +42,10 @@ func handlePacket(conn *net.UDPConn, remoteAddr *net.UDPAddr, data []byte) {
 	mutex.Lock()
 	hdlcConn, exists := activeConnections[remoteAddr.String()]
 	if !exists {
-		hdlcConn = hdlc.NewHDLCConnection(nil)
-		// Assuming server address 0x01, client can be anything.
-		// In a real scenario, the address would be part of the initial handshake.
-		hdlcConn.SetAddress([]byte{0x01}, []byte{0x02})
+		config := hdlc.DefaultConfig()
+		config.SrcAddr = []byte{0x01}  // Server address
+		config.DestAddr = []byte{0x02} // Client address
+		hdlcConn = hdlc.NewHDLCConnection(config)
 		activeConnections[remoteAddr.String()] = hdlcConn
 		log.Printf("New client connection from %s", remoteAddr.String())
 	}

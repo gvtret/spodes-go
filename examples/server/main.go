@@ -52,9 +52,17 @@ func handleHDLCConnection(conn net.Conn) {
 	defer conn.Close()
 	log.Printf("Accepted HDLC connection from %s", conn.RemoteAddr())
 
-	hdlcConn := hdlc.NewHDLCConnection(nil) // Use default config
-	// Server address is 0x01, Client is 0x02
-	hdlcConn.SetAddress([]byte{0x01}, []byte{0x02})
+	config := hdlc.DefaultConfig()
+	config.SrcAddr = []byte{0x01}  // Server address
+	config.DestAddr = []byte{0x02} // Client address
+	hdlcConn := hdlc.NewHDLCConnection(config)
+
+	go func() {
+		for frame := range hdlcConn.RetransmitFrames {
+			log.Printf("Server retransmitting frame: %x", frame)
+			conn.Write(frame)
+		}
+	}()
 
 	buf := make([]byte, 1024)
 	for {
