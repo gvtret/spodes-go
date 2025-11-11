@@ -35,7 +35,7 @@ func main() {
 
 func runHDLCClient(conn net.Conn) {
 	config := hdlc.DefaultConfig()
-	config.SrcAddr = []byte{0x02} // Client address
+	config.SrcAddr = []byte{0x02}  // Client address
 	config.DestAddr = []byte{0x01} // Server address
 	hdlcConn := hdlc.NewHDLCConnection(config)
 

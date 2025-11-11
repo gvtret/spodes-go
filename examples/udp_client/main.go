@@ -24,7 +24,7 @@ func main() {
 	log.Printf("UDP client connected to %s", serverAddr)
 
 	config := hdlc.DefaultConfig()
-	config.SrcAddr = []byte{0x02} // Client address
+	config.SrcAddr = []byte{0x02}  // Client address
 	config.DestAddr = []byte{0x01} // Server address
 	hdlcConn := hdlc.NewHDLCConnection(config)
 

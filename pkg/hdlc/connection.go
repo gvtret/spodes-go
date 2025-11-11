@@ -9,22 +9,22 @@ import (
 
 // Config holds the configuration parameters for an HDLC connection.
 type Config struct {
-	WindowSize           int
-	MaxFrameSize         int
-	InactivityTimeout    time.Duration
-	FrameAssemblyTimeout time.Duration
+	WindowSize            int
+	MaxFrameSize          int
+	InactivityTimeout     time.Duration
+	FrameAssemblyTimeout  time.Duration
 	RetransmissionTimeout time.Duration
-	DestAddr             []byte
-	SrcAddr              []byte
+	DestAddr              []byte
+	SrcAddr               []byte
 }
 
 // DefaultConfig returns a new Config object with default values.
 func DefaultConfig() *Config {
 	return &Config{
-		WindowSize:           MaxWindowSize,
-		MaxFrameSize:         128,
-		InactivityTimeout:    time.Duration(InactivityTimeout) * time.Millisecond,
-		FrameAssemblyTimeout: 2 * time.Second,
+		WindowSize:            MaxWindowSize,
+		MaxFrameSize:          128,
+		InactivityTimeout:     time.Duration(InactivityTimeout) * time.Millisecond,
+		FrameAssemblyTimeout:  2 * time.Second,
 		RetransmissionTimeout: 5 * time.Second,
 	}
 }
@@ -64,28 +64,28 @@ const (
 
 // HDLCConnection manages the HDLC connection
 type HDLCConnection struct {
-	state                string
-	destAddr             []byte
-	srcAddr              []byte
-	sendSeq              uint8
-	recvSeq              uint8
-	lastAckedSeq         uint8
-	windowSize           int
-	maxFrameSize         int
-	sentFrames           map[uint8]*HDLCFrame
-	sentTimes            map[uint8]time.Time
-	recvBuffer           map[uint8]*HDLCFrame
-	segmentBuffer        []byte
-	ReassembledData      chan []byte
-	RetransmitFrames     chan []byte
-	mutex                sync.Mutex
-	ackChannel           chan uint8
-	isPeerReceiverReady  bool
-	inactivityTimeout    time.Duration
-	frameAssemblyTimeout time.Duration
+	state                 string
+	destAddr              []byte
+	srcAddr               []byte
+	sendSeq               uint8
+	recvSeq               uint8
+	lastAckedSeq          uint8
+	windowSize            int
+	maxFrameSize          int
+	sentFrames            map[uint8]*HDLCFrame
+	sentTimes             map[uint8]time.Time
+	recvBuffer            map[uint8]*HDLCFrame
+	segmentBuffer         []byte
+	ReassembledData       chan []byte
+	RetransmitFrames      chan []byte
+	mutex                 sync.Mutex
+	ackChannel            chan uint8
+	isPeerReceiverReady   bool
+	inactivityTimeout     time.Duration
+	frameAssemblyTimeout  time.Duration
 	retransmissionTimeout time.Duration
-	lastActivity         time.Time
-	readBuffer           bytes.Buffer
+	lastActivity          time.Time
+	readBuffer            bytes.Buffer
 }
 
 // NewHDLCConnection creates a new HDLC connection with the given configuration.
@@ -95,23 +95,23 @@ func NewHDLCConnection(config *Config) *HDLCConnection {
 		config = DefaultConfig()
 	}
 	conn := &HDLCConnection{
-		state:                StateDisconnected,
-		windowSize:           config.WindowSize,
-		maxFrameSize:         config.MaxFrameSize,
-		inactivityTimeout:    config.InactivityTimeout,
-		frameAssemblyTimeout: config.FrameAssemblyTimeout,
+		state:                 StateDisconnected,
+		windowSize:            config.WindowSize,
+		maxFrameSize:          config.MaxFrameSize,
+		inactivityTimeout:     config.InactivityTimeout,
+		frameAssemblyTimeout:  config.FrameAssemblyTimeout,
 		retransmissionTimeout: config.RetransmissionTimeout,
-		destAddr:             config.DestAddr,
-		srcAddr:              config.SrcAddr,
-		sentFrames:           make(map[uint8]*HDLCFrame),
-		sentTimes:            make(map[uint8]time.Time),
-		recvBuffer:           make(map[uint8]*HDLCFrame),
-		segmentBuffer:        make([]byte, 0),
-		ReassembledData:      make(chan []byte, 10),
-		RetransmitFrames:     make(chan []byte, 10),
-		ackChannel:           make(chan uint8, 1),
-		isPeerReceiverReady:  true,
-		readBuffer:           bytes.Buffer{},
+		destAddr:              config.DestAddr,
+		srcAddr:               config.SrcAddr,
+		sentFrames:            make(map[uint8]*HDLCFrame),
+		sentTimes:             make(map[uint8]time.Time),
+		recvBuffer:            make(map[uint8]*HDLCFrame),
+		segmentBuffer:         make([]byte, 0),
+		ReassembledData:       make(chan []byte, 10),
+		RetransmitFrames:      make(chan []byte, 10),
+		ackChannel:            make(chan uint8, 1),
+		isPeerReceiverReady:   true,
+		readBuffer:            bytes.Buffer{},
 	}
 	go conn.retransmissionDaemon()
 	return conn

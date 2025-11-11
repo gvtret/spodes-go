@@ -43,7 +43,7 @@ func handlePacket(conn *net.UDPConn, remoteAddr *net.UDPAddr, data []byte) {
 	hdlcConn, exists := activeConnections[remoteAddr.String()]
 	if !exists {
 		config := hdlc.DefaultConfig()
-		config.SrcAddr = []byte{0x01} // Server address
+		config.SrcAddr = []byte{0x01}  // Server address
 		config.DestAddr = []byte{0x02} // Client address
 		hdlcConn = hdlc.NewHDLCConnection(config)
 		activeConnections[remoteAddr.String()] = hdlcConn
