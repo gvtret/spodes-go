@@ -1,0 +1,30 @@
+@startuml
+' skinparam
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam defaultFontSize 12
+skinparam roundCorner 5
+skinparam sequence {
+    ActorBorderColor Black
+    LifeLineBorderColor Black
+    ParticipantBorderColor Black
+    ArrowColor Black
+}
+
+actor Client
+participant "cosemObject:Register" as CosemObject
+participant "baseImpl:BaseImpl" as BaseImpl
+
+Client -> CosemObject: Invoke(methodID, params)
+activate CosemObject
+CosemObject -> BaseImpl: Invoke(methodID, params)
+activate BaseImpl
+BaseImpl -> BaseImpl: PreExecuteCallback(methodID, params, ctx)
+BaseImpl -> BaseImpl: method.Handler(params)
+BaseImpl -> BaseImpl: PostExecuteCallback(methodID, params, result, ctx)
+BaseImpl --> CosemObject: result
+deactivate BaseImpl
+CosemObject --> Client: result
+deactivate CosemObject
+@enduml

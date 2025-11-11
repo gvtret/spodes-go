@@ -1,0 +1,68 @@
+@startuml
+' skinparam
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam defaultFontSize 12
+skinparam roundCorner 5
+skinparam stereotypeCBackgroundColor White
+skinparam class {
+    BackgroundColor White
+    ArrowColor Black
+    BorderColor Black
+}
+
+' interfaces
+interface BaseInterface {
+    + GetClassID() uint16
+    + GetInstanceID() ObisCode
+    + GetAttribute(attributeID byte) (interface{}, error)
+    + SetAttribute(attributeID byte, value interface{}) error
+    + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
+    + GetAttributeAccess(attributeID byte) AttributeAccess
+    + GetMethodAccess(methodID byte) MethodAccess
+    + SetPreReadCallback(cb PreReadCallback)
+    + SetPostReadCallback(cb PostReadCallback)
+    + SetPreWriteCallback(cb PreWriteCallback)
+    + SetPostWriteCallback(cb PostWriteCallback)
+    + SetPreExecuteCallback(cb PreExecuteCallback)
+    + SetPostExecuteCallback(cb PostExecuteCallback)
+    + SetCallbackContext(ctx interface{})
+}
+
+' classes
+class BaseImpl {
+    + ClassID: uint16
+    + InstanceID: ObisCode
+    + Attributes: map[byte]AttributeDescriptor
+    + Methods: map[byte]MethodDescriptor
+    + PreReadCallback: PreReadCallback
+    + PostReadCallback: PostReadCallback
+    + PreWriteCallback: PreWriteCallback
+    + PostWriteCallback: PostWriteCallback
+    + PreExecuteCallback: PreExecuteCallback
+    + PostExecuteCallback: PostExecuteCallback
+    + CallbackContext: interface{}
+    + GetAttribute(attributeID byte) (interface{}, error)
+    + SetAttribute(attributeID byte, value interface{}) error
+    + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
+}
+
+class Data {
+    + GetAttribute(attributeID byte) (interface{}, error)
+    + SetAttribute(attributeID byte, value interface{}) error
+    + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
+}
+
+class Register {
+    + GetAttribute(attributeID byte) (interface{}, error)
+    + SetAttribute(attributeID byte, value interface{}) error
+    + Invoke(methodID byte, parameters []interface{}) (interface{}, error)
+}
+
+' relationships
+BaseInterface <|.. BaseImpl
+BaseImpl <|-- Data
+BaseImpl <|-- Register
+
+@enduml

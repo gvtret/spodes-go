@@ -194,3 +194,92 @@ func TestBaseImpl_GetMethodAccess(t *testing.T) {
 	assert.Equal(t, MethodNoAccess, base.GetMethodAccess(2))
 	assert.Equal(t, MethodNoAccess, base.GetMethodAccess(3))
 }
+
+func TestBaseImpl_Callbacks(t *testing.T) {
+	obis, _ := NewObisCodeFromString("1.2.3.4.5.6")
+	base := &BaseImpl{
+		ClassID:    1,
+		InstanceID: *obis,
+		Attributes: map[byte]AttributeDescriptor{
+			1: {
+				Type:   reflect.TypeOf("test"),
+				Access: AttributeRead | AttributeWrite,
+				Value:  "initial_value",
+			},
+		},
+		Methods: map[byte]MethodDescriptor{
+			1: {
+				Access:     MethodAccessAllowed,
+				ParamTypes: []reflect.Type{reflect.TypeOf(0)},
+				ReturnType: reflect.TypeOf(0),
+				Handler: func(params []interface{}) (interface{}, error) {
+					return 42, nil
+				},
+			},
+		},
+	}
+
+	// Read callbacks
+	preReadCalled := false
+	postReadCalled := false
+	base.SetPreReadCallback(func(attributeID byte, ctx interface{}) error {
+		preReadCalled = true
+		assert.Equal(t, byte(1), attributeID)
+		assert.Equal(t, "test_context", ctx)
+		return nil
+	})
+	base.SetPostReadCallback(func(attributeID byte, value interface{}, ctx interface{}) {
+		postReadCalled = true
+		assert.Equal(t, byte(1), attributeID)
+		assert.Equal(t, "initial_value", value)
+		assert.Equal(t, "test_context", ctx)
+	})
+
+	// Write callbacks
+	preWriteCalled := false
+	postWriteCalled := false
+	base.SetPreWriteCallback(func(attributeID byte, value interface{}, ctx interface{}) error {
+		preWriteCalled = true
+		assert.Equal(t, byte(1), attributeID)
+		assert.Equal(t, "new_value", value)
+		assert.Equal(t, "test_context", ctx)
+		return nil
+	})
+	base.SetPostWriteCallback(func(attributeID byte, value interface{}, ctx interface{}) {
+		postWriteCalled = true
+		assert.Equal(t, byte(1), attributeID)
+		assert.Equal(t, "new_value", value)
+		assert.Equal(t, "test_context", ctx)
+	})
+
+	// Execute callbacks
+	preExecuteCalled := false
+	postExecuteCalled := false
+	base.SetPreExecuteCallback(func(methodID byte, params []interface{}, ctx interface{}) error {
+		preExecuteCalled = true
+		assert.Equal(t, byte(1), methodID)
+		assert.Equal(t, "test_context", ctx)
+		return nil
+	})
+	base.SetPostExecuteCallback(func(methodID byte, params []interface{}, result interface{}, ctx interface{}) {
+		postExecuteCalled = true
+		assert.Equal(t, byte(1), methodID)
+		assert.Equal(t, 42, result)
+		assert.Equal(t, "test_context", ctx)
+	})
+
+	base.SetCallbackContext("test_context")
+
+	// Trigger callbacks
+	_, _ = base.GetAttribute(1)
+	_ = base.SetAttribute(1, "new_value")
+	_, _ = base.Invoke(1, []interface{}{123})
+
+	// Assertions
+	assert.True(t, preReadCalled, "PreReadCallback was not called")
+	assert.True(t, postReadCalled, "PostReadCallback was not called")
+	assert.True(t, preWriteCalled, "PreWriteCallback was not called")
+	assert.True(t, postWriteCalled, "PostWriteCallback was not called")
+	assert.True(t, preExecuteCalled, "PreExecuteCallback was not called")
+	assert.True(t, postExecuteCalled, "PostExecuteCallback was not called")
+}
