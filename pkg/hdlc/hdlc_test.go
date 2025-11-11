@@ -4,16 +4,21 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestFullConnectionLifecycle validates the complete HDLC connection flow
 func TestFullConnectionLifecycle(t *testing.T) {
-	client := NewHDLCConnection(nil)
-	server := NewHDLCConnection(nil)
+	clientConfig := DefaultConfig()
+	clientConfig.DestAddr = []byte{0x01}
+	clientConfig.SrcAddr = []byte{0x02}
+	client := NewHDLCConnection(clientConfig)
 
-	da, sa := []byte{0x01}, []byte{0x02}
-	client.SetAddress(da, sa)
-	server.SetAddress(sa, da)
+	serverConfig := DefaultConfig()
+	serverConfig.DestAddr = []byte{0x02}
+	serverConfig.SrcAddr = []byte{0x01}
+	server := NewHDLCConnection(serverConfig)
 
 	snrmFrameBytes, err := client.Connect()
 	if err != nil {
@@ -72,13 +77,17 @@ func TestFullConnectionLifecycle(t *testing.T) {
 
 // TestSegmentationAndReassembly validates sending and receiving a segmented PDU
 func TestSegmentationAndReassembly(t *testing.T) {
-	config := DefaultConfig()
-	config.MaxFrameSize = 32
-	client := NewHDLCConnection(config)
-	server := NewHDLCConnection(nil)
+	clientConfig := DefaultConfig()
+	clientConfig.MaxFrameSize = 32
+	clientConfig.DestAddr = []byte{0x11}
+	clientConfig.SrcAddr = []byte{0x22}
+	client := NewHDLCConnection(clientConfig)
 
-	client.SetAddress([]byte{0x11}, []byte{0x22})
-	server.SetAddress([]byte{0x22}, []byte{0x11})
+	serverConfig := DefaultConfig()
+	serverConfig.DestAddr = []byte{0x22}
+	serverConfig.SrcAddr = []byte{0x11}
+	server := NewHDLCConnection(serverConfig)
+
 	client.state = StateConnected
 	server.state = StateConnected
 
@@ -114,8 +123,9 @@ func TestSegmentationAndReassembly(t *testing.T) {
 func TestSlidingWindow(t *testing.T) {
 	config := DefaultConfig()
 	config.WindowSize = 2
+	config.DestAddr = []byte{0x33}
+	config.SrcAddr = []byte{0x44}
 	client := NewHDLCConnection(config)
-	client.SetAddress([]byte{0x33}, []byte{0x44})
 	client.state = StateConnected
 
 	for i := 0; i < client.windowSize; i++ {
@@ -131,13 +141,18 @@ func TestSlidingWindow(t *testing.T) {
 	}
 }
 
-// TestRejectFrame simulates a lost frame and tests the REJ response
+// TestRejectFrame simulates a lost frame and tests the SREJ response
 func TestRejectFrame(t *testing.T) {
-	client := NewHDLCConnection(nil)
-	server := NewHDLCConnection(nil)
+	clientConfig := DefaultConfig()
+	clientConfig.DestAddr = []byte{0x55}
+	clientConfig.SrcAddr = []byte{0x66}
+	client := NewHDLCConnection(clientConfig)
 
-	client.SetAddress([]byte{0x55}, []byte{0x66})
-	server.SetAddress([]byte{0x66}, []byte{0x55})
+	serverConfig := DefaultConfig()
+	serverConfig.DestAddr = []byte{0x66}
+	serverConfig.SrcAddr = []byte{0x55}
+	server := NewHDLCConnection(serverConfig)
+
 	client.state = StateConnected
 	server.state = StateConnected
 
@@ -149,27 +164,32 @@ func TestRejectFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to decode frame2: %v", err)
 	}
-	rejFrameBytes, err := server.HandleFrame(frame2)
+	srejFrameBytes, err := server.HandleFrame(frame2)
 	if err != nil {
 		t.Fatalf("Server.HandleFrame should not fail on an out-of-order frame: %v", err)
 	}
 
-	decoded, err := DecodeFrame(rejFrameBytes[1 : len(rejFrameBytes)-1])
+	decoded, err := DecodeFrame(srejFrameBytes[1 : len(srejFrameBytes)-1])
 	if err != nil {
 		t.Fatalf("Failed to decode server response: %v", err)
 	}
-	if decoded.Type != FrameTypeS || (decoded.Control&0x0F) != SFrameREJ {
-		t.Fatal("Server should have sent a REJ frame")
+	if decoded.Type != FrameTypeS || (decoded.Control&0x0F) != SFrameSREJ {
+		t.Fatal("Server should have sent a SREJ frame")
 	}
 }
 
 // TestReceiverNotReady validates the RNR flow control mechanism
 func TestReceiverNotReady(t *testing.T) {
-	client := NewHDLCConnection(nil)
-	server := NewHDLCConnection(nil)
+	clientConfig := DefaultConfig()
+	clientConfig.DestAddr = []byte{0x77}
+	clientConfig.SrcAddr = []byte{0x88}
+	client := NewHDLCConnection(clientConfig)
 
-	client.SetAddress([]byte{0x77}, []byte{0x88})
-	server.SetAddress([]byte{0x88}, []byte{0x77})
+	serverConfig := DefaultConfig()
+	serverConfig.DestAddr = []byte{0x88}
+	serverConfig.SrcAddr = []byte{0x77}
+	server := NewHDLCConnection(serverConfig)
+
 	client.state = StateConnected
 	server.state = StateConnected
 
@@ -208,7 +228,6 @@ func TestFrameRejectHandling(t *testing.T) {
 	}
 
 	// This is a bit of a hack, as EncodeFrame would normally prevent this.
-	// We'll manually construct a bad frame to test the server's response.
 	// For this test, we'll simulate an invalid frame type instead.
 	invalidFrame.Type = 99 // Not a valid frame type
 
@@ -266,4 +285,82 @@ func TestFrameEncodeDecode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSelectiveReject(t *testing.T) {
+	clientConfig := DefaultConfig()
+	clientConfig.DestAddr = []byte{0x1}
+	clientConfig.SrcAddr = []byte{0x2}
+	client := NewHDLCConnection(clientConfig)
+
+	serverConfig := DefaultConfig()
+	serverConfig.DestAddr = []byte{0x2}
+	serverConfig.SrcAddr = []byte{0x1}
+	server := NewHDLCConnection(serverConfig)
+
+	client.state = StateConnected
+	server.state = StateConnected
+
+	// Send frames 0, 1, 3 (simulating lost frame 2)
+	frames0, _ := client.SendData([]byte("frame0"))
+	frames1, _ := client.SendData([]byte("frame1"))
+	client.sendSeq++ // Skip frame 2
+	frames3, _ := client.SendData([]byte("frame3"))
+
+	// Server receives frame 0
+	frame0, _ := DecodeFrame(frames0[0][1 : len(frames0[0])-1])
+	server.HandleFrame(frame0)
+
+	// Server receives frame 1
+	frame1, _ := DecodeFrame(frames1[0][1 : len(frames1[0])-1])
+	server.HandleFrame(frame1)
+
+	// Server receives frame 3 (out of order)
+	frame3, _ := DecodeFrame(frames3[0][1 : len(frames3[0])-1])
+	srejFrameBytes, err := server.HandleFrame(frame3)
+	assert.NoError(t, err)
+
+	// Server should send SREJ for frame 2
+	srejFrame, _ := DecodeFrame(srejFrameBytes[1 : len(srejFrameBytes)-1])
+	assert.Equal(t, FrameTypeS, srejFrame.Type)
+	assert.Equal(t, byte(SFrameSREJ), srejFrame.Control&0x0F)
+	assert.Equal(t, byte(2), (srejFrame.Control>>5)&0x07) // NR should be 2
+}
+
+func TestRetransmission(t *testing.T) {
+	config := DefaultConfig()
+	config.RetransmissionTimeout = 100 * time.Millisecond
+	config.DestAddr = []byte{0x1}
+	config.SrcAddr = []byte{0x2}
+	client := NewHDLCConnection(config)
+	client.state = StateConnected
+
+	// Send a frame
+	client.SendData([]byte("frame0"))
+
+	// Wait for retransmission
+	select {
+	case ns := <-client.retransmitChan:
+		assert.Equal(t, byte(0), ns)
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Retransmission did not occur in time")
+	}
+}
+
+func TestIFrameBuffering(t *testing.T) {
+	server := NewHDLCConnection(nil)
+	server.state = StateConnected
+
+	// Send frame 1 (out of order)
+	frame1 := &HDLCFrame{DA: []byte{0x2}, SA: []byte{0x1}, Type: FrameTypeI, NS: 1, Information: []byte("frame1")}
+	server.HandleFrame(frame1)
+	assert.Contains(t, server.recvBuffer, uint8(1))
+
+	// Send frame 0 (in order)
+	frame0 := &HDLCFrame{DA: []byte{0x2}, SA: []byte{0x1}, Type: FrameTypeI, NS: 0, Information: []byte("frame0")}
+	server.HandleFrame(frame0)
+
+	// Check that frame 1 was processed from the buffer
+	assert.NotContains(t, server.recvBuffer, uint8(1))
+	assert.Equal(t, uint8(2), server.recvSeq)
 }

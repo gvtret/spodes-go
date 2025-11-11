@@ -34,9 +34,10 @@ func main() {
 }
 
 func runHDLCClient(conn net.Conn) {
-	hdlcConn := hdlc.NewHDLCConnection(nil) // Use default config
-	// Client address is 0x02, Server is 0x01
-	hdlcConn.SetAddress([]byte{0x02}, []byte{0x01})
+	config := hdlc.DefaultConfig()
+	config.SrcAddr = []byte{0x02} // Client address
+	config.DestAddr = []byte{0x01} // Server address
+	hdlcConn := hdlc.NewHDLCConnection(config)
 
 	// 1. Send SNRM to connect
 	log.Println("Client sending: SNRM")

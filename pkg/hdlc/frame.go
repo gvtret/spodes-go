@@ -36,9 +36,10 @@ const (
 
 // S-frame types
 const (
-	SFrameRR  = 0x01 // Receive Ready
-	SFrameRNR = 0x05 // Receive Not Ready
-	SFrameREJ = 0x09 // Reject
+	SFrameRR   = 0x01 // Receive Ready
+	SFrameRNR  = 0x05 // Receive Not Ready
+	SFrameREJ  = 0x09 // Reject
+	SFrameSREJ = 0x0D // Selective Reject
 )
 
 // HDLCFrame represents an HDLC frame structure
