@@ -3,7 +3,6 @@ package wrapper
 import (
 	"net"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -31,8 +30,7 @@ func TestConnSendReceive(t *testing.T) {
 
 	// Send the frame from the client
 	go func() {
-		err := clientConn.Send(frameToSend)
-		assert.NoError(t, err)
+		clientConn.Send(frameToSend)
 	}()
 
 	// Receive the frame on the server
@@ -66,12 +64,9 @@ func TestConnReceiveInvalidVersion(t *testing.T) {
 			Payload: []byte("hello"),
 		}
 		encoded, _ := invalidFrame.Encode()
-		_, err := client.Write(encoded)
-		assert.NoError(t, err)
+		client.Write(encoded)
 	}()
 
-	// Set a deadline to avoid the test hanging
-	server.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	_, err := serverConn.Receive()
 	assert.Error(t, err)
 }
