@@ -44,6 +44,13 @@ func (c *mockConn) Close() error {
 	return nil
 }
 
+func (c *mockConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{
+		IP:   net.ParseIP("127.0.0.1"),
+		Port: 12345,
+	}
+}
+
 func TestConnectionSendAndReceive(t *testing.T) {
 	mock := &mockConn{}
 	config := DefaultConfig()
@@ -64,9 +71,11 @@ func TestConnectionSendAndReceive(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test Read
-	receivedPDU, err := conn.Read()
+	receivedPDU, addr, err := conn.Read()
 	assert.NoError(t, err)
 	assert.Equal(t, pduToSend, receivedPDU)
+	assert.NotNil(t, addr)
+	assert.Equal(t, "127.0.0.1:12345", addr.String())
 }
 
 func TestConnectionReadTimeout(t *testing.T) {
@@ -75,7 +84,7 @@ func TestConnectionReadTimeout(t *testing.T) {
 	config.ReadTimeout = 50 * time.Millisecond
 	conn := NewConnection(mock, config)
 
-	_, err := conn.Read()
+	_, _, err := conn.Read()
 	assert.Error(t, err)
 	assert.Equal(t, "read timeout", err.Error())
 }
@@ -103,6 +112,6 @@ func TestConnectionInvalidFrame(t *testing.T) {
 	// Since the frame was invalid, no PDU should be available to read.
 	// We expect a timeout here.
 	config.ReadTimeout = 50 * time.Millisecond
-	_, err = conn.Read()
+	_, _, err = conn.Read()
 	assert.Error(t, err)
 }

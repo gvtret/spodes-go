@@ -3,6 +3,8 @@ package hdlc
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -11,6 +13,27 @@ import (
 )
 
 var _ transport.Transport = (*HDLCConnection)(nil)
+
+// HDLCAddress represents an HDLC address.
+type HDLCAddress struct {
+	Address []byte
+}
+
+// Network returns the network type, "hdlc".
+func (a *HDLCAddress) Network() string {
+	return "hdlc"
+}
+
+// String returns the string representation of the HDLC address.
+func (a *HDLCAddress) String() string {
+	return fmt.Sprintf("%X", a.Address)
+}
+
+// pduWithAddress is used to pass a reassembled PDU and its source address together.
+type pduWithAddress struct {
+	PDU  []byte
+	Addr net.Addr
+}
 
 // Config holds the configuration parameters for an HDLC connection.
 type Config struct {
@@ -71,7 +94,7 @@ type HDLCConnection struct {
 	sentTimes             map[uint8]time.Time
 	recvBuffer            map[uint8]*HDLCFrame
 	segmentBuffer         []byte
-	ReassembledData       chan []byte
+	ReassembledData       chan pduWithAddress
 	RetransmitFrames      chan []byte
 	mutex                 sync.Mutex
 	ackChannel            chan uint8
@@ -102,7 +125,7 @@ func NewHDLCConnection(config *Config) *HDLCConnection {
 		sentTimes:             make(map[uint8]time.Time),
 		recvBuffer:            make(map[uint8]*HDLCFrame),
 		segmentBuffer:         make([]byte, 0),
-		ReassembledData:       make(chan []byte, 10),
+		ReassembledData:       make(chan pduWithAddress, 10),
 		RetransmitFrames:      make(chan []byte, 10),
 		ackChannel:            make(chan uint8, 1),
 		isPeerReceiverReady:   true,
@@ -205,7 +228,11 @@ func (c *HDLCConnection) handleConnectedState(frame *HDLCFrame) ([]byte, error) 
 		c.segmentBuffer = append(c.segmentBuffer, frame.Information...)
 		if !frame.Segmented {
 			if c.ReassembledData != nil {
-				c.ReassembledData <- c.segmentBuffer
+				pdu := pduWithAddress{
+					PDU:  c.segmentBuffer,
+					Addr: &HDLCAddress{Address: frame.SA},
+				}
+				c.ReassembledData <- pdu
 			}
 			c.segmentBuffer = make([]byte, 0)
 		}
@@ -217,7 +244,11 @@ func (c *HDLCConnection) handleConnectedState(frame *HDLCFrame) ([]byte, error) 
 				c.segmentBuffer = append(c.segmentBuffer, bufferedFrame.Information...)
 				if !bufferedFrame.Segmented {
 					if c.ReassembledData != nil {
-						c.ReassembledData <- c.segmentBuffer
+						pdu := pduWithAddress{
+							PDU:  c.segmentBuffer,
+							Addr: &HDLCAddress{Address: bufferedFrame.SA},
+						}
+						c.ReassembledData <- pdu
 					}
 					c.segmentBuffer = make([]byte, 0)
 				}
@@ -421,12 +452,12 @@ func (c *HDLCConnection) Receive(data []byte) ([][]byte, error) {
 }
 
 // Read blocks until a complete PDU has been reassembled or a timeout occurs.
-func (c *HDLCConnection) Read() ([]byte, error) {
+func (c *HDLCConnection) Read() ([]byte, net.Addr, error) {
 	select {
-	case pdu := <-c.ReassembledData:
-		return pdu, nil
+	case pduInfo := <-c.ReassembledData:
+		return pduInfo.PDU, pduInfo.Addr, nil
 	case <-time.After(c.inactivityTimeout):
-		return nil, common.NewError(common.ErrReadTimeout, "read timeout")
+		return nil, nil, common.NewError(common.ErrReadTimeout, "read timeout")
 	}
 }
 

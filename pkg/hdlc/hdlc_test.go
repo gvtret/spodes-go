@@ -110,10 +110,12 @@ func TestSegmentationAndReassembly(t *testing.T) {
 	}
 
 	select {
-	case reassembledPDU := <-server.ReassembledData:
-		if !bytes.Equal(longPDU, reassembledPDU) {
+	case reassembledPDUInfo := <-server.ReassembledData:
+		if !bytes.Equal(longPDU, reassembledPDUInfo.PDU) {
 			t.Errorf("Reassembled PDU does not match original PDU")
 		}
+		expectedAddr := &HDLCAddress{Address: client.srcAddr}
+		assert.Equal(t, expectedAddr, reassembledPDUInfo.Addr, "Reassembled PDU source address does not match")
 	case <-time.After(1 * time.Second):
 		t.Fatal("Server did not reassemble the PDU in time")
 	}

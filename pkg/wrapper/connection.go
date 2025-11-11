@@ -28,12 +28,18 @@ func DefaultConfig() *Config {
 	}
 }
 
+// pduWithAddress is used to pass a reassembled PDU and its source address together.
+type pduWithAddress struct {
+	PDU  []byte
+	Addr net.Addr
+}
+
 // Connection implements the transport.Transport interface for the WRAPPER protocol.
 type Connection struct {
 	conn           net.Conn
 	config         *Config
 	readBuffer     bytes.Buffer
-	reassembledPDU chan []byte
+	reassembledPDU chan pduWithAddress
 	mutex          sync.Mutex
 	isConnected    bool
 }
@@ -46,7 +52,7 @@ func NewConnection(conn net.Conn, config *Config) *Connection {
 	return &Connection{
 		conn:           conn,
 		config:         config,
-		reassembledPDU: make(chan []byte, 10),
+		reassembledPDU: make(chan pduWithAddress, 10),
 		isConnected:    true, // Assume connected if we are given a net.Conn
 	}
 }
@@ -141,8 +147,11 @@ func (c *Connection) Receive(src []byte) ([][]byte, error) {
 			continue
 		}
 
-		// Send the reassembled PDU to be picked up by the Read() method.
-		c.reassembledPDU <- frame.Payload
+		// Send the reassembled PDU and source address to be picked up by the Read() method.
+		c.reassembledPDU <- pduWithAddress{
+			PDU:  frame.Payload,
+			Addr: c.conn.RemoteAddr(),
+		}
 	}
 
 	// The WRAPPER layer itself does not generate response frames (like ACKs).
@@ -152,11 +161,11 @@ func (c *Connection) Receive(src []byte) ([][]byte, error) {
 
 // Read implements the transport.Transport interface. It blocks until a complete PDU
 // has been reassembled by the Receive method or a timeout occurs.
-func (c *Connection) Read() ([]byte, error) {
+func (c *Connection) Read() ([]byte, net.Addr, error) {
 	select {
-	case pdu := <-c.reassembledPDU:
-		return pdu, nil
+	case pduInfo := <-c.reassembledPDU:
+		return pduInfo.PDU, pduInfo.Addr, nil
 	case <-time.After(c.config.ReadTimeout):
-		return nil, fmt.Errorf("read timeout")
+		return nil, nil, fmt.Errorf("read timeout")
 	}
 }

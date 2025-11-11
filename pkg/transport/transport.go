@@ -1,5 +1,7 @@
 package transport
 
+import "net"
+
 // Transport defines a common interface for different transport layers,
 // such as HDLC or TCP/IP WRAPPER.
 type Transport interface {
@@ -23,6 +25,6 @@ type Transport interface {
 	Receive(src []byte) ([][]byte, error)
 
 	// Read blocks until a complete PDU has been received and reassembled.
-	// It returns the reassembled PDU or an error (e.g., on timeout).
-	Read() ([]byte, error)
+	// It returns the reassembled PDU, the source address of the sender, or an error.
+	Read() ([]byte, net.Addr, error)
 }
