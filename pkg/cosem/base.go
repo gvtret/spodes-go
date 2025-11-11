@@ -75,6 +75,35 @@ var (
 	ErrInvalidValueType      = fmt.Errorf("invalid value type")
 )
 
+// Callback types
+type (
+	// PreReadCallback is invoked before an attribute is read.
+	// It receives the attribute ID and context, and returns an error to abort the read.
+	PreReadCallback func(attributeID byte, ctx interface{}) error
+
+	// PostReadCallback is invoked after an attribute is successfully read.
+	// It receives the attribute ID, the read value, and context.
+	PostReadCallback func(attributeID byte, value interface{}, ctx interface{})
+
+	// PreWriteCallback is invoked before an attribute is written.
+	// It receives the attribute ID, the value to be written, and context.
+	// It can return an error to abort the write.
+	PreWriteCallback func(attributeID byte, value interface{}, ctx interface{}) error
+
+	// PostWriteCallback is invoked after an attribute is successfully written.
+	// It receives the attribute ID, the written value, and context.
+	PostWriteCallback func(attributeID byte, value interface{}, ctx interface{})
+
+	// PreExecuteCallback is invoked before a method is executed.
+	// It receives the method ID, parameters, and context.
+	// It can return an error to abort the execution.
+	PreExecuteCallback func(methodID byte, params []interface{}, ctx interface{}) error
+
+	// PostExecuteCallback is invoked after a method is successfully executed.
+	// It receives the method ID, parameters, the result, and context.
+	PostExecuteCallback func(methodID byte, params []interface{}, result interface{}, ctx interface{})
+)
+
 // BaseInterface is an interface for a GXDLMS object.
 //
 // It contains methods for getting and setting attributes, invoking methods, and getting attribute and method access.
@@ -86,16 +115,30 @@ type BaseInterface interface {
 	Invoke(methodID byte, parameters []interface{}) (interface{}, error)
 	GetAttributeAccess(attributeID byte) AttributeAccess
 	GetMethodAccess(methodID byte) MethodAccess
+	SetPreReadCallback(cb PreReadCallback)
+	SetPostReadCallback(cb PostReadCallback)
+	SetPreWriteCallback(cb PreWriteCallback)
+	SetPostWriteCallback(cb PostWriteCallback)
+	SetPreExecuteCallback(cb PreExecuteCallback)
+	SetPostExecuteCallback(cb PostExecuteCallback)
+	SetCallbackContext(ctx interface{})
 }
 
 // BaseImpl is a base implementation of a COSEM object.
 //
 // It contains the class ID, instance ID, attributes, and methods of the object.
 type BaseImpl struct {
-	ClassID    uint16
-	InstanceID ObisCode
-	Attributes map[byte]AttributeDescriptor
-	Methods    map[byte]MethodDescriptor
+	ClassID             uint16
+	InstanceID          ObisCode
+	Attributes          map[byte]AttributeDescriptor
+	Methods             map[byte]MethodDescriptor
+	PreReadCallback     PreReadCallback
+	PostReadCallback    PostReadCallback
+	PreWriteCallback    PreWriteCallback
+	PostWriteCallback   PostWriteCallback
+	PreExecuteCallback  PreExecuteCallback
+	PostExecuteCallback PostExecuteCallback
+	CallbackContext     interface{}
 }
 
 // GetClassID gets COSEM object class ID
@@ -112,6 +155,12 @@ func (b *BaseImpl) GetInstanceID() ObisCode {
 //
 // The attributeID is the ID of the attribute to be retrieved.
 func (b *BaseImpl) GetAttribute(attributeID byte) (interface{}, error) {
+	if b.PreReadCallback != nil {
+		if err := b.PreReadCallback(attributeID, b.CallbackContext); err != nil {
+			return nil, err
+		}
+	}
+
 	attr, exists := b.Attributes[attributeID]
 	if !exists {
 		return nil, ErrAttributeNotSupported
@@ -119,6 +168,10 @@ func (b *BaseImpl) GetAttribute(attributeID byte) (interface{}, error) {
 	// Allow access for either AttributeRead or AttributeWrite
 	if attr.Access&AttributeRead == 0 {
 		return nil, ErrAccessDenied
+	}
+
+	if b.PostReadCallback != nil {
+		b.PostReadCallback(attributeID, attr.Value, b.CallbackContext)
 	}
 	return attr.Value, nil
 }
@@ -128,6 +181,12 @@ func (b *BaseImpl) GetAttribute(attributeID byte) (interface{}, error) {
 // The attributeID is the ID of the attribute to be set.
 // The value is the value to be set.
 func (b *BaseImpl) SetAttribute(attributeID byte, value interface{}) error {
+	if b.PreWriteCallback != nil {
+		if err := b.PreWriteCallback(attributeID, value, b.CallbackContext); err != nil {
+			return err
+		}
+	}
+
 	attr, exists := b.Attributes[attributeID]
 	if !exists {
 		return ErrAttributeNotSupported
@@ -140,6 +199,10 @@ func (b *BaseImpl) SetAttribute(attributeID byte, value interface{}) error {
 	}
 	attr.Value = value
 	b.Attributes[attributeID] = attr
+
+	if b.PostWriteCallback != nil {
+		b.PostWriteCallback(attributeID, value, b.CallbackContext)
+	}
 	return nil
 }
 
@@ -148,6 +211,12 @@ func (b *BaseImpl) SetAttribute(attributeID byte, value interface{}) error {
 // The methodID is the ID of the method to be invoked.
 // The parameters are the parameters to be passed to the method.
 func (b *BaseImpl) Invoke(methodID byte, parameters []interface{}) (interface{}, error) {
+	if b.PreExecuteCallback != nil {
+		if err := b.PreExecuteCallback(methodID, parameters, b.CallbackContext); err != nil {
+			return nil, err
+		}
+	}
+
 	method, exists := b.Methods[methodID]
 	if !exists {
 		return nil, ErrMethodNotSupported
@@ -167,7 +236,15 @@ func (b *BaseImpl) Invoke(methodID byte, parameters []interface{}) (interface{},
 		}
 	}
 
-	return method.Handler(parameters)
+	result, err := method.Handler(parameters)
+	if err != nil {
+		return nil, err
+	}
+
+	if b.PostExecuteCallback != nil {
+		b.PostExecuteCallback(methodID, parameters, result, b.CallbackContext)
+	}
+	return result, nil
 }
 
 // GetAttributeAccess gets the access level of an attribute.
@@ -188,4 +265,39 @@ func (b *BaseImpl) GetMethodAccess(methodID byte) MethodAccess {
 		return method.Access
 	}
 	return MethodNoAccess
+}
+
+// SetPreReadCallback sets the pre-read callback.
+func (b *BaseImpl) SetPreReadCallback(cb PreReadCallback) {
+	b.PreReadCallback = cb
+}
+
+// SetPostReadCallback sets the post-read callback.
+func (b *BaseImpl) SetPostReadCallback(cb PostReadCallback) {
+	b.PostReadCallback = cb
+}
+
+// SetPreWriteCallback sets the pre-write callback.
+func (b *BaseImpl) SetPreWriteCallback(cb PreWriteCallback) {
+	b.PreWriteCallback = cb
+}
+
+// SetPostWriteCallback sets the post-write callback.
+func (b *BaseImpl) SetPostWriteCallback(cb PostWriteCallback) {
+	b.PostWriteCallback = cb
+}
+
+// SetPreExecuteCallback sets the pre-execute callback.
+func (b *BaseImpl) SetPreExecuteCallback(cb PreExecuteCallback) {
+	b.PreExecuteCallback = cb
+}
+
+// SetPostExecuteCallback sets the post-execute callback.
+func (b *BaseImpl) SetPostExecuteCallback(cb PostExecuteCallback) {
+	b.PostExecuteCallback = cb
+}
+
+// SetCallbackContext sets the callback context.
+func (b *BaseImpl) SetCallbackContext(ctx interface{}) {
+	b.CallbackContext = ctx
 }

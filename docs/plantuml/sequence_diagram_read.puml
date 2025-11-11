@@ -1,0 +1,29 @@
+@startuml
+' skinparam
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam defaultFontSize 12
+skinparam roundCorner 5
+skinparam sequence {
+    ActorBorderColor Black
+    LifeLineBorderColor Black
+    ParticipantBorderColor Black
+    ArrowColor Black
+}
+
+actor Client
+participant "cosemObject:Data" as CosemObject
+participant "baseImpl:BaseImpl" as BaseImpl
+
+Client -> CosemObject: GetAttribute(attributeID)
+activate CosemObject
+CosemObject -> BaseImpl: GetAttribute(attributeID)
+activate BaseImpl
+BaseImpl -> BaseImpl: PreReadCallback(attributeID, ctx)
+BaseImpl -> BaseImpl: PostReadCallback(attributeID, value, ctx)
+BaseImpl --> CosemObject: value
+deactivate BaseImpl
+CosemObject --> Client: value
+deactivate CosemObject
+@enduml
