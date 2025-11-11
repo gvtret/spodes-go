@@ -40,9 +40,11 @@ func runHDLCClient(conn net.Conn) {
 	hdlcConn := hdlc.NewHDLCConnection(config)
 
 	go func() {
-		for frame := range hdlcConn.RetransmitFrames {
-			log.Printf("Client retransmitting frame: %x", frame)
-			conn.Write(frame)
+		for {
+			_, _, err := hdlcConn.Read() // In client, we don't process unsolicited PDUs
+			if err != nil {
+				return
+			}
 		}
 	}()
 
@@ -64,12 +66,9 @@ func runHDLCClient(conn net.Conn) {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err := hdlcConn.Receive(buf[:n])
+	_, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA response: %v", err)
-	}
-	if len(responses) > 0 {
-		log.Printf("Client received unexpected response to UA: %x", responses[0])
 	}
 	if !hdlcConn.IsConnected() {
 		log.Fatalf("Client failed to connect.")
@@ -83,9 +82,7 @@ func runHDLCClient(conn net.Conn) {
 	if err != nil {
 		log.Fatalf("Client failed to generate segmented I-frames: %v", err)
 	}
-	log.Printf("Client sending %d frames", len(frames))
-	for i, frame := range frames {
-		log.Printf("Client sending frame %d: %x", i+1, frame)
+	for _, frame := range frames {
 		_, err = conn.Write(frame)
 		if err != nil {
 			log.Fatalf("Failed to write I-frame segment: %v", err)
@@ -98,12 +95,9 @@ func runHDLCClient(conn net.Conn) {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err = hdlcConn.Receive(buf[:n])
+	_, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling RR response: %v", err)
-	}
-	if len(responses) > 0 {
-		log.Printf("Client received unexpected response to RR: %x", responses[0])
 	}
 	log.Println("Client received RR acknowledgment.")
 
@@ -125,12 +119,9 @@ func runHDLCClient(conn net.Conn) {
 		log.Fatalf("Failed to read response: %v", err)
 	}
 	log.Printf("Client received %d bytes: %x", n, buf[:n])
-	responses, err = hdlcConn.Receive(buf[:n])
+	_, err = hdlcConn.Receive(buf[:n])
 	if err != nil {
 		log.Fatalf("Client error handling UA for DISC: %v", err)
-	}
-	if len(responses) > 0 {
-		log.Printf("Client received unexpected response to DISC UA: %x", responses[0])
 	}
 	if hdlcConn.IsConnected() {
 		log.Fatalf("Client failed to disconnect.")
@@ -165,7 +156,7 @@ func runWrapperClient(conn net.Conn) {
 	if err != nil {
 		log.Fatalf("Client error handling response: %v", err)
 	}
-	respPDU, err := wrapperConn.Read()
+	respPDU, _, err := wrapperConn.Read()
 	if err != nil {
 		log.Fatalf("Failed to read PDU: %v", err)
 	}

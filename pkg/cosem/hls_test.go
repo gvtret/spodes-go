@@ -83,12 +83,16 @@ func TestApplication_HandleAPDU_Secured(t *testing.T) {
 	guek := []byte("0123456789ABCDEF")
 	gak := []byte("0123456789ABCDEF")
 	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
-	app := NewApplication(nil, associationLN, securitySetup)
+	app := NewApplication(nil, securitySetup)
 	app.securitySetup.SetAttribute(3, SecuritySuite1)
+
+	clientAddr := mockAddr("client1")
+	app.AddAssociation(clientAddr.String(), associationLN)
 
 	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
 	dataObj, _ := NewData(*obis, uint32(12345))
 	app.RegisterObject(dataObj)
+	app.PopulateObjectList(associationLN, []ObisCode{*obis})
 
 	req := &GetRequest{
 		Type:                GET_REQUEST_NORMAL,
@@ -111,7 +115,7 @@ func TestApplication_HandleAPDU_Secured(t *testing.T) {
 	encodedHeader, _ := header.Encode()
 	securedReq := append([]byte{byte(APDU_GLO_GET_REQUEST)}, append(encodedHeader, ciphertext...)...)
 
-	encodedResp, err := app.HandleAPDU(securedReq)
+	encodedResp, err := app.HandleAPDU(securedReq, clientAddr)
 	assert.NoError(t, err)
 
 	respHeader := &SecurityHeader{}

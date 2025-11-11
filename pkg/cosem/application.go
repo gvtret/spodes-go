@@ -2,6 +2,8 @@ package cosem
 
 import (
 	"fmt"
+	"net"
+
 	"github.com/gvtret/spodes-go/pkg/axdr"
 	"github.com/gvtret/spodes-go/pkg/transport"
 )
@@ -10,36 +12,50 @@ import (
 // It holds and manages all the COSEM objects.
 type Application struct {
 	objects          map[string]BaseInterface
-	associationLN    *AssociationLN
+	associations     map[string]*AssociationLN
 	securitySetup    *SecuritySetup
 	transport        transport.Transport
 	lastFrameCounter uint32
 }
 
 // NewApplication creates a new COSEM application instance.
-func NewApplication(transport transport.Transport, associationLN *AssociationLN, securitySetup *SecuritySetup) *Application {
+func NewApplication(transport transport.Transport, securitySetup *SecuritySetup) *Application {
 	app := &Application{
 		objects:       make(map[string]BaseInterface),
+		associations:  make(map[string]*AssociationLN),
 		transport:     transport,
-		associationLN: associationLN,
 		securitySetup: securitySetup,
 	}
-	// Register the AssociationLN and SecuritySetup objects themselves
-	app.RegisterObject(associationLN)
+	// Register the SecuritySetup object
 	app.RegisterObject(securitySetup)
 	return app
 }
 
-// RegisterObject adds a COSEM object to the application.
+// AddAssociation maps a client address string to a specific AssociationLN instance.
+func (app *Application) AddAssociation(address string, assoc *AssociationLN) {
+	app.associations[address] = assoc
+	// Register the AssociationLN object itself
+	app.RegisterObject(assoc)
+}
+
+// RegisterObject adds a COSEM object to the application's master object list.
 // If an object with the same instance ID already exists, it will be overwritten.
 func (app *Application) RegisterObject(obj BaseInterface) {
 	instanceID := obj.GetInstanceID().String()
 	app.objects[instanceID] = obj
+}
 
-	// Add the object to the AssociationLN's object list
-	if app.associationLN != nil && obj.GetClassID() != AssociationLNClassID {
-		app.associationLN.AddObject(obj)
+// PopulateObjectList adds a curated list of objects to a specific AssociationLN's object list.
+// This allows for creating filtered views for different clients (e.g., public vs. admin).
+func (app *Application) PopulateObjectList(assoc *AssociationLN, objectOBISs []ObisCode) error {
+	for _, obis := range objectOBISs {
+		obj, found := app.FindObject(obis)
+		if !found {
+			return fmt.Errorf("object with OBIS code %s not found in master list", obis.String())
+		}
+		assoc.AddObject(obj)
 	}
+	return nil
 }
 
 // FindObject retrieves a COSEM object by its instance ID (OBIS code).
@@ -49,25 +65,30 @@ func (app *Application) FindObject(instanceID ObisCode) (BaseInterface, bool) {
 	return obj, found
 }
 
-// HandleAPDU processes an incoming APDU.
-func (app *Application) HandleAPDU(src []byte) ([]byte, error) {
+// HandleAPDU processes an incoming APDU from a specific client address.
+func (app *Application) HandleAPDU(src []byte, clientAddr net.Addr) ([]byte, error) {
 	if len(src) == 0 {
 		return nil, fmt.Errorf("empty APDU")
+	}
+
+	assoc, ok := app.associations[clientAddr.String()]
+	if !ok {
+		return nil, fmt.Errorf("no association found for client address: %s", clientAddr.String())
 	}
 
 	apduType := APDUType(src[0])
 
 	switch apduType {
 	case APDU_GLO_GET_REQUEST, APDU_GLO_SET_REQUEST, APDU_GLO_ACTION_REQUEST:
-		return app.handleSecuredAPDU(apduType, src)
+		return app.handleSecuredAPDU(apduType, src, assoc)
 	case APDU_GET_REQUEST, APDU_SET_REQUEST, APDU_ACTION_REQUEST:
-		return app.handleUnsecuredAPDU(apduType, src)
+		return app.handleUnsecuredAPDU(apduType, src, assoc)
 	default:
 		return nil, fmt.Errorf("unsupported APDU type: %X", apduType)
 	}
 }
 
-func (app *Application) handleSecuredAPDU(apduType APDUType, src []byte) ([]byte, error) {
+func (app *Application) handleSecuredAPDU(apduType APDUType, src []byte, assoc *AssociationLN) ([]byte, error) {
 	policy, err := app.securitySetup.GetAttribute(2)
 	if err != nil {
 		return nil, err
@@ -112,7 +133,7 @@ func (app *Application) handleSecuredAPDU(apduType APDUType, src []byte) ([]byte
 	}
 	app.lastFrameCounter = header.FrameCounter
 
-	respAPDU, err := app.dispatchAPDU(plaintext)
+	respAPDU, err := app.dispatchAPDU(plaintext, assoc)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +173,7 @@ func (app *Application) handleSecuredAPDU(apduType APDUType, src []byte) ([]byte
 	return append([]byte{byte(respAPDUType)}, append(encodedRespHeader, ciphertext...)...), nil
 }
 
-func (app *Application) handleUnsecuredAPDU(apduType APDUType, src []byte) ([]byte, error) {
+func (app *Application) handleUnsecuredAPDU(apduType APDUType, src []byte, assoc *AssociationLN) ([]byte, error) {
 	policy, err := app.securitySetup.GetAttribute(2)
 	if err != nil {
 		return nil, err
@@ -163,7 +184,7 @@ func (app *Application) handleUnsecuredAPDU(apduType APDUType, src []byte) ([]by
 		return nil, fmt.Errorf("security policy violation: unsecured request not allowed")
 	}
 
-	respAPDU, err := app.dispatchAPDU(src)
+	respAPDU, err := app.dispatchAPDU(src, assoc)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +192,7 @@ func (app *Application) handleUnsecuredAPDU(apduType APDUType, src []byte) ([]by
 	return respAPDU.Encode()
 }
 
-func (app *Application) dispatchAPDU(src []byte) (APDU, error) {
+func (app *Application) dispatchAPDU(src []byte, assoc *AssociationLN) (APDU, error) {
 	apduType := APDUType(src[0])
 	switch apduType {
 	case APDU_GET_REQUEST:
@@ -180,21 +201,21 @@ func (app *Application) dispatchAPDU(src []byte) (APDU, error) {
 		if err != nil {
 			return nil, err
 		}
-		return app.HandleGetRequest(req), nil
+		return app.HandleGetRequest(req, assoc), nil
 	case APDU_SET_REQUEST:
 		req := &SetRequest{}
 		err := req.Decode(src)
 		if err != nil {
 			return nil, err
 		}
-		return app.HandleSetRequest(req), nil
+		return app.HandleSetRequest(req, assoc), nil
 	case APDU_ACTION_REQUEST:
 		req := &ActionRequest{}
 		err := req.Decode(src)
 		if err != nil {
 			return nil, err
 		}
-		return app.HandleActionRequest(req), nil
+		return app.HandleActionRequest(req, assoc), nil
 	default:
 		return nil, fmt.Errorf("unsupported APDU type: %X", apduType)
 	}
@@ -206,10 +227,18 @@ type APDU interface {
 }
 
 // HandleGetRequest processes a Get-Request APDU and returns a Get-Response APDU.
-func (app *Application) HandleGetRequest(req *GetRequest) *GetResponse {
+func (app *Application) HandleGetRequest(req *GetRequest, assoc *AssociationLN) *GetResponse {
 	resp := &GetResponse{
 		Type:                GET_RESPONSE_NORMAL,
 		InvokeIDAndPriority: req.InvokeIDAndPriority,
+	}
+
+	if !assoc.CheckAttributeAccess(req.AttributeDescriptor.InstanceID, byte(req.AttributeDescriptor.AttributeID), Read) {
+		resp.Result = GetDataResult{
+			IsDataAccessResult: true,
+			Value:              READ_WRITE_DENIED,
+		}
+		return resp
 	}
 
 	obj, found := app.FindObject(req.AttributeDescriptor.InstanceID)
@@ -223,6 +252,8 @@ func (app *Application) HandleGetRequest(req *GetRequest) *GetResponse {
 
 	val, err := obj.GetAttribute(byte(req.AttributeDescriptor.AttributeID))
 	if err != nil {
+		// The original error from GetAttribute might be too generic.
+		// We can provide a more specific access control error if the association check failed.
 		switch err {
 		case ErrAttributeNotSupported:
 			resp.Result = GetDataResult{
@@ -251,10 +282,15 @@ func (app *Application) HandleGetRequest(req *GetRequest) *GetResponse {
 }
 
 // HandleSetRequest processes a Set-Request APDU and returns a Set-Response APDU.
-func (app *Application) HandleSetRequest(req *SetRequest) *SetResponse {
+func (app *Application) HandleSetRequest(req *SetRequest, assoc *AssociationLN) *SetResponse {
 	resp := &SetResponse{
 		Type:                SET_RESPONSE_NORMAL,
 		InvokeIDAndPriority: req.InvokeIDAndPriority,
+	}
+
+	if !assoc.CheckAttributeAccess(req.AttributeDescriptor.InstanceID, byte(req.AttributeDescriptor.AttributeID), Write) {
+		resp.Result = READ_WRITE_DENIED
+		return resp
 	}
 
 	obj, found := app.FindObject(req.AttributeDescriptor.InstanceID)
@@ -283,10 +319,18 @@ func (app *Application) HandleSetRequest(req *SetRequest) *SetResponse {
 }
 
 // HandleActionRequest processes an Action-Request APDU and returns an Action-Response APDU.
-func (app *Application) HandleActionRequest(req *ActionRequest) *ActionResponse {
+func (app *Application) HandleActionRequest(req *ActionRequest, assoc *AssociationLN) *ActionResponse {
 	resp := &ActionResponse{
 		Type:                ACTION_RESPONSE_NORMAL,
 		InvokeIDAndPriority: req.InvokeIDAndPriority,
+	}
+
+	if !assoc.CheckMethodAccess(req.MethodDescriptor.InstanceID, byte(req.MethodDescriptor.MethodID)) {
+		resp.Result = ActionResult{
+			IsDataAccessResult: true,
+			Value:              READ_WRITE_DENIED,
+		}
+		return resp
 	}
 
 	obj, found := app.FindObject(req.MethodDescriptor.InstanceID)
@@ -300,8 +344,6 @@ func (app *Application) HandleActionRequest(req *ActionRequest) *ActionResponse 
 
 	params, ok := req.Parameters.(axdr.Array)
 	if !ok {
-		// If parameters are nil (e.g. for a method with no parameters), the axdr decoder might return nil
-		// In that case, we can treat it as an empty array.
 		if req.Parameters == nil {
 			params = axdr.Array{}
 		} else {

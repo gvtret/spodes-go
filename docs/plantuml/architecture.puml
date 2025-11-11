@@ -1,0 +1,52 @@
+@startuml
+' skinparam linetype ortho
+
+interface transport.Transport {
+  + Read() ([]byte, net.Addr, error)
+  + Send(pdu []byte) ([][]byte, error)
+  ' ... other methods
+}
+
+class hdlc.HDLCConnection {
+  ' ... fields
+  + Read() ([]byte, net.Addr, error)
+  + Send(pdu []byte) ([][]byte, error)
+}
+
+class wrapper.Connection {
+  ' ... fields
+  + Read() ([]byte, net.Addr, error)
+  + Send(pdu []byte) ([][]byte, error)
+}
+
+class cosem.Application {
+  - objects: map[string]BaseInterface
+  - associations: map[string]*AssociationLN
+  - transport: transport.Transport
+  + HandleAPDU(src []byte, clientAddr net.Addr) ([]byte, error)
+  + AddAssociation(address string, assoc *AssociationLN)
+  + RegisterObject(obj BaseInterface)
+  + PopulateObjectList(assoc *AssociationLN, objectOBISs []ObisCode)
+}
+
+class cosem.AssociationLN {
+  + AddObject(obj BaseInterface)
+  + CheckAttributeAccess(...) bool
+  + CheckMethodAccess(...) bool
+}
+
+interface cosem.BaseInterface {
+  + GetInstanceID() ObisCode
+  ' ... other methods
+}
+
+
+transport.Transport <|.. hdlc.HDLCConnection
+transport.Transport <|.. wrapper.Connection
+
+cosem.Application o-- "1" transport.Transport
+cosem.Application o-- "*" cosem.AssociationLN
+cosem.Application o-- "*" cosem.BaseInterface
+cosem.AssociationLN o-- "*" cosem.BaseInterface : references >
+
+@enduml
