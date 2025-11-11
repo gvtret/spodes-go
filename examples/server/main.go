@@ -1,14 +1,19 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net"
 	"os"
 
 	"github.com/gvtret/spodes-go/pkg/hdlc"
+	"github.com/gvtret/spodes-go/pkg/wrapper"
 )
 
 func main() {
+	transport := flag.String("transport", "hdlc", "Transport layer to use: 'hdlc' or 'wrapper'")
+	flag.Parse()
+
 	// Configure logging to a file
 	logFile, err := os.OpenFile("server.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
@@ -23,22 +28,29 @@ func main() {
 		log.Fatalf("Failed to listen on %s: %v", listenAddr, err)
 	}
 	defer listener.Close()
-	log.Printf("HDLC server listening on %s", listenAddr)
+	log.Printf("%s server listening on %s", *transport, listenAddr)
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			log.Printf("Failed to accept connection: %v", err)
-
 			continue
 		}
-		go handleConnection(conn)
+
+		switch *transport {
+		case "hdlc":
+			go handleHDLCConnection(conn)
+		case "wrapper":
+			go handleWrapperConnection(conn)
+		default:
+			log.Fatalf("Invalid transport layer specified: %s", *transport)
+		}
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleHDLCConnection(conn net.Conn) {
 	defer conn.Close()
-	log.Printf("Accepted connection from %s", conn.RemoteAddr())
+	log.Printf("Accepted HDLC connection from %s", conn.RemoteAddr())
 
 	hdlcConn := hdlc.NewHDLCConnection(nil) // Use default config
 	// Server address is 0x01, Client is 0x02
@@ -57,7 +69,6 @@ func handleConnection(conn net.Conn) {
 		responses, err := hdlcConn.Handle(buf[:n])
 		if err != nil {
 			log.Printf("Error handling HDLC frame: %v", err)
-			// Decide if we should close the connection based on the error type
 			if hdlcErr, ok := err.(*hdlc.HDLCError); ok && hdlcErr.ShouldExit {
 				return
 			}
@@ -73,15 +84,46 @@ func handleConnection(conn net.Conn) {
 			}
 		}
 
-		// After handling raw frames, check for reassembled PDUs
 		for len(hdlcConn.ReassembledData) > 0 {
 			pdu, err := hdlcConn.Read()
 			if err != nil {
 				log.Printf("Error reading PDU: %v", err)
-				break // Or continue, depending on desired error handling
+				break
 			}
 			log.Printf("Server received reassembled PDU: %s", string(pdu))
-			// Here, the application layer would process the PDU
+		}
+	}
+}
+
+func handleWrapperConnection(conn net.Conn) {
+	defer conn.Close()
+	log.Printf("Accepted WRAPPER connection from %s", conn.RemoteAddr())
+
+	wrapperConn := wrapper.NewConn(conn)
+
+	for {
+		frame, err := wrapperConn.Receive()
+		if err != nil {
+			log.Printf("Error receiving wrapper frame: %v", err)
+			return
+		}
+
+		log.Printf("Server received wrapper frame: %+v", frame)
+
+		// Echo the payload back
+		respFrame := &wrapper.Frame{
+			Version: wrapper.Version,
+			SrcAddr: frame.DstAddr,
+			DstAddr: frame.SrcAddr,
+			Length:  frame.Length,
+			Payload: frame.Payload,
+		}
+
+		log.Printf("Server sending response frame: %+v", respFrame)
+		err = wrapperConn.Send(respFrame)
+		if err != nil {
+			log.Printf("Error sending wrapper frame: %v", err)
+			return
 		}
 	}
 }
