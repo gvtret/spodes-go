@@ -53,7 +53,7 @@ func handleHDLCConnection(conn net.Conn) {
 	log.Printf("Accepted HDLC connection from %s", conn.RemoteAddr())
 
 	config := hdlc.DefaultConfig()
-	config.SrcAddr = []byte{0x01} // Server address
+	config.SrcAddr = []byte{0x01}  // Server address
 	config.DestAddr = []byte{0x02} // Client address
 	hdlcConn := hdlc.NewHDLCConnection(config)
 
