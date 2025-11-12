@@ -11,6 +11,7 @@ const AssociationLNVersion byte = 0
 // AssociationLN represents the COSEM "Association LN" interface class.
 type AssociationLN struct {
 	BaseImpl
+	serverInvocationCounter uint32
 }
 
 // ObjectListElement represents an element in the object_list attribute of the Association LN class.
@@ -80,6 +81,17 @@ func NewAssociationLN(obis ObisCode) (*AssociationLN, error) {
 			Methods:    map[byte]MethodDescriptor{},
 		},
 	}, nil
+}
+
+// SetServerInvocationCounter updates the last server-side invocation counter value.
+// The next secured response from this association will use counter+1.
+func (a *AssociationLN) SetServerInvocationCounter(counter uint32) {
+	a.serverInvocationCounter = counter
+}
+
+// ServerInvocationCounter returns the last server-side invocation counter value.
+func (a *AssociationLN) ServerInvocationCounter() uint32 {
+	return a.serverInvocationCounter
 }
 
 // AddObject adds a new object to the object_list attribute.
