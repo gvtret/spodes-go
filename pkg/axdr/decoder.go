@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 )
 
 // Decode decodes A-XDR data into a Go value as per IEC 62056-6-2 and СТО 34.01-5.1-006-2023.
@@ -200,16 +201,16 @@ func decodeFloat64(reader *bytes.Reader) (interface{}, error) {
 // Expects a length byte (0-255) followed by the byte sequence.
 // Returns an empty byte slice for length 0, or the byte slice, or an error if reading fails.
 func decodeOctetString(reader *bytes.Reader) (interface{}, error) {
-	length, err := reader.ReadByte()
+	length, err := readAXDRLength(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read octet-string length: %v", err)
+		return nil, fmt.Errorf("failed to read octet-string length: %w", err)
 	}
 	if length == 0 {
 		return []byte{}, nil
 	}
 	data := make([]byte, length)
-	if _, err := reader.Read(data); err != nil {
-		return nil, fmt.Errorf("failed to decode octet-string: %v", err)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, fmt.Errorf("failed to decode octet-string: %w", err)
 	}
 	return data, nil
 }
@@ -218,16 +219,16 @@ func decodeOctetString(reader *bytes.Reader) (interface{}, error) {
 // Expects a length byte (0-255) followed by ASCII bytes.
 // Returns an empty string for length 0, or the string, or an error if reading fails.
 func decodeVisibleString(reader *bytes.Reader) (interface{}, error) {
-	length, err := reader.ReadByte()
+	length, err := readAXDRLength(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read visible-string length: %v", err)
+		return nil, fmt.Errorf("failed to read visible-string length: %w", err)
 	}
 	if length == 0 {
 		return "", nil
 	}
 	data := make([]byte, length)
-	if _, err := reader.Read(data); err != nil {
-		return nil, fmt.Errorf("failed to decode visible-string: %v", err)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, fmt.Errorf("failed to decode visible-string: %w", err)
 	}
 	return string(data), nil
 }
@@ -237,18 +238,18 @@ func decodeVisibleString(reader *bytes.Reader) (interface{}, error) {
 // Unused bits in the last byte are expected to be zero.
 // Returns a BitString struct or an error if the data is invalid.
 func decodeBitString(reader *bytes.Reader) (interface{}, error) {
-	length, err := reader.ReadByte()
+	length, err := readAXDRLength(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read bitstring length: %v", err)
+		return nil, fmt.Errorf("failed to read bitstring length: %w", err)
 	}
 	expectedBytes := (length + 7) / 8
 	data := make([]byte, expectedBytes)
-	if _, err := reader.Read(data); err != nil {
-		return nil, fmt.Errorf("failed to decode bitstring: %v", err)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, fmt.Errorf("failed to decode bitstring: %w", err)
 	}
 	bs := BitString{
 		Bits:   data,
-		Length: length,
+		Length: uint32(length),
 	}
 	if err := bs.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid bitstring: %v", err)
@@ -261,14 +262,14 @@ func decodeBitString(reader *bytes.Reader) (interface{}, error) {
 // each encoding two decimal digits (high nibble first).
 // Returns a BCD struct or an error if the data is invalid.
 func decodeBCD(reader *bytes.Reader) (interface{}, error) {
-	length, err := reader.ReadByte()
+	length, err := readAXDRLength(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read BCD length: %v", err)
+		return nil, fmt.Errorf("failed to read BCD length: %w", err)
 	}
 	expectedBytes := (length + 1) / 2
 	data := make([]byte, expectedBytes)
-	if _, err := reader.Read(data); err != nil {
-		return nil, fmt.Errorf("failed to decode BCD: %v", err)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, fmt.Errorf("failed to decode BCD: %w", err)
 	}
 	// Unpack bytes into digits.
 	digits := make([]byte, length)
@@ -362,9 +363,9 @@ func decodeDateTime(reader *bytes.Reader) (interface{}, error) {
 // Expects a length byte (0-255) followed by encoded elements, each with its own tag.
 // Returns a slice of interfaces or an error if decoding fails.
 func decodeArray(reader *bytes.Reader) (interface{}, error) {
-	length, err := reader.ReadByte()
+	length, err := readAXDRLength(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read array length: %v", err)
+		return nil, fmt.Errorf("failed to read array length: %w", err)
 	}
 	result := make(Array, length)
 	// Use range loop for idiomatic Go iteration.
@@ -382,9 +383,9 @@ func decodeArray(reader *bytes.Reader) (interface{}, error) {
 // Expects a length byte (0-255) followed by encoded fields, each with its own tag.
 // Returns a slice of interfaces or an error if decoding fails.
 func decodeStructure(reader *bytes.Reader) (interface{}, error) {
-	length, err := reader.ReadByte()
+	length, err := readAXDRLength(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read structure length: %v", err)
+		return nil, fmt.Errorf("failed to read structure length: %w", err)
 	}
 	result := make(Structure, length)
 	// Use range loop for idiomatic Go iteration.

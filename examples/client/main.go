@@ -20,7 +20,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to server: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("Failed to close connection: %v", err)
+		}
+	}()
 	log.Printf("Connected to %s server at %s", *transport, serverAddr)
 
 	switch *transport {

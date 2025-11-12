@@ -149,12 +149,11 @@ func boolToByte(b bool) byte {
 // Returns an error if the string length exceeds 255 bytes.
 func encodeString(buf *bytes.Buffer, v reflect.Value, tag Tag) error {
 	data := []byte(v.String())
-	if len(data) > 255 {
-		return fmt.Errorf("string length %d exceeds maximum of 255", len(data))
-	}
 	// Write tag, length, and string data.
 	buf.WriteByte(byte(tag))
-	buf.WriteByte(byte(len(data)))
+	if err := writeAXDRLength(buf, len(data)); err != nil {
+		return fmt.Errorf("failed to write string length: %w", err)
+	}
 	buf.Write(data)
 	return nil
 }
@@ -164,12 +163,11 @@ func encodeString(buf *bytes.Buffer, v reflect.Value, tag Tag) error {
 // Returns an error if the length exceeds 255 bytes.
 func encodeOctetString(buf *bytes.Buffer, v reflect.Value) error {
 	data := v.Bytes()
-	if len(data) > 255 {
-		return fmt.Errorf("octet-string length %d exceeds maximum of 255", len(data))
-	}
 	// Write tag, length, and byte data.
 	buf.WriteByte(byte(TagOctetString))
-	buf.WriteByte(byte(len(data)))
+	if err := writeAXDRLength(buf, len(data)); err != nil {
+		return fmt.Errorf("failed to write octet-string length: %w", err)
+	}
 	buf.Write(data)
 	return nil
 }
@@ -184,7 +182,14 @@ func encodeBitString(buf *bytes.Buffer, bs BitString) error {
 	}
 	// Write tag and bit length.
 	buf.WriteByte(byte(TagBitString))
-	buf.WriteByte(bs.Length)
+	maxInt := int(^uint(0) >> 1)
+	if bs.Length > uint32(maxInt) {
+		return fmt.Errorf("bitstring length %d exceeds supported maximum of %d", bs.Length, maxInt)
+	}
+	bitLength := int(bs.Length)
+	if err := writeAXDRLength(buf, bitLength); err != nil {
+		return fmt.Errorf("failed to write bitstring length: %w", err)
+	}
 	// Write bit data.
 	buf.Write(bs.Bits)
 	return nil
@@ -201,7 +206,9 @@ func encodeBCD(buf *bytes.Buffer, bcd BCD) error {
 	// Write tag and digit count.
 	length := len(bcd.Digits)
 	buf.WriteByte(byte(TagBCD))
-	buf.WriteByte(byte(length))
+	if err := writeAXDRLength(buf, length); err != nil {
+		return fmt.Errorf("failed to write BCD length: %w", err)
+	}
 	// Pack digits into bytes (two per byte, high nibble first).
 	for i := 0; i < length; i += 2 {
 		var b byte
@@ -275,10 +282,9 @@ func encodeArray(buf *bytes.Buffer, v reflect.Value) error {
 
 	// Получаем длину через reflection
 	length := v.Len()
-	if length > 255 {
-		return fmt.Errorf("array length %d exceeds maximum of 255", length)
+	if err := writeAXDRLength(buf, length); err != nil {
+		return fmt.Errorf("failed to write array length: %w", err)
 	}
-	buf.WriteByte(byte(length))
 
 	// Используем Index(i) для доступа к элементам через reflection
 	for i := 0; i < length; i++ {
@@ -297,10 +303,9 @@ func encodeStructure(buf *bytes.Buffer, v reflect.Value) error {
 	buf.WriteByte(byte(TagStructure))
 
 	length := v.Len()
-	if length > 255 {
-		return fmt.Errorf("structure field count %d exceeds maximum of 255", length)
+	if err := writeAXDRLength(buf, length); err != nil {
+		return fmt.Errorf("failed to write structure length: %w", err)
 	}
-	buf.WriteByte(byte(length))
 
 	for i := 0; i < length; i++ {
 		field := v.Index(i)

@@ -20,7 +20,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to UDP server: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("Failed to close UDP connection: %v", err)
+		}
+	}()
 	log.Printf("UDP client connected to %s", serverAddr)
 
 	config := hdlc.DefaultConfig()

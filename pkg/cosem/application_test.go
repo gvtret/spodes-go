@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockAddr string
@@ -12,29 +13,38 @@ type mockAddr string
 func (a mockAddr) Network() string { return "mock" }
 func (a mockAddr) String() string  { return string(a) }
 
-func setupTestApp() (*Application, *AssociationLN, net.Addr, *Data) {
-	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
-	associationLN, _ := NewAssociationLN(*obisAssociationLN)
+func setupTestApp(t *testing.T) (*Application, *AssociationLN, net.Addr, *Data) {
+	t.Helper()
 
-	obisSecurity, _ := NewObisCodeFromString("0.0.43.0.0.255")
-	securitySetup, _ := NewSecuritySetup(*obisSecurity, nil, nil, nil, nil, nil)
+	obisAssociationLN, err := NewObisCodeFromString("0.0.40.0.0.255")
+	require.NoError(t, err)
+	associationLN, err := NewAssociationLN(*obisAssociationLN)
+	require.NoError(t, err)
+
+	obisSecurity, err := NewObisCodeFromString("0.0.43.0.0.255")
+	require.NoError(t, err)
+	securitySetup, err := NewSecuritySetup(*obisSecurity, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
 
 	app := NewApplication(nil, securitySetup)
 
 	clientAddr := mockAddr("client1")
 	app.AddAssociation(clientAddr.String(), associationLN)
 
-	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
-	dataObj, _ := NewData(*obis, uint32(12345))
+	obis, err := NewObisCodeFromString("1.0.0.3.0.255")
+	require.NoError(t, err)
+	dataObj, err := NewData(*obis, uint32(12345))
+	require.NoError(t, err)
 	app.RegisterObject(dataObj)
 
-	app.PopulateObjectList(associationLN, []ObisCode{*obis})
+	err = app.PopulateObjectList(associationLN, []ObisCode{*obis})
+	require.NoError(t, err)
 
 	return app, associationLN, clientAddr, dataObj
 }
 
 func TestApplication_HandleGetRequest(t *testing.T) {
-	app, _, clientAddr, dataObj := setupTestApp()
+	app, _, clientAddr, dataObj := setupTestApp(t)
 
 	t.Run("Successful Get", func(t *testing.T) {
 		req := &GetRequest{
@@ -115,7 +125,7 @@ func TestApplication_HandleGetRequest(t *testing.T) {
 }
 
 func TestApplication_HandleSetRequest(t *testing.T) {
-	app, _, clientAddr, dataObj := setupTestApp()
+	app, _, clientAddr, dataObj := setupTestApp(t)
 
 	t.Run("Successful Set", func(t *testing.T) {
 		req := &SetRequest{
@@ -145,13 +155,16 @@ func TestApplication_HandleSetRequest(t *testing.T) {
 }
 
 func TestApplication_HandleActionRequest(t *testing.T) {
-	app, assoc, clientAddr, _ := setupTestApp()
+	app, assoc, clientAddr, _ := setupTestApp(t)
 
-	obis, _ := NewObisCodeFromString("1.0.0.4.0.255")
+	obis, err := NewObisCodeFromString("1.0.0.4.0.255")
+	require.NoError(t, err)
 	scalerUnit := ScalerUnit{Scaler: 0, Unit: UnitCount}
-	registerObj, _ := NewRegister(*obis, int32(100), scalerUnit)
+	registerObj, err := NewRegister(*obis, int32(100), scalerUnit)
+	require.NoError(t, err)
 	app.RegisterObject(registerObj)
-	app.PopulateObjectList(assoc, []ObisCode{*obis})
+	err = app.PopulateObjectList(assoc, []ObisCode{*obis})
+	require.NoError(t, err)
 
 	t.Run("Successful Action", func(t *testing.T) {
 		req := &ActionRequest{
@@ -181,8 +194,9 @@ func TestApplication_HandleActionRequest(t *testing.T) {
 }
 
 func TestApplication_SecurityPolicy(t *testing.T) {
-	app, _, clientAddr, dataObj := setupTestApp()
-	app.securitySetup.SetAttribute(2, PolicyAuthenticatedRequest)
+	app, _, clientAddr, dataObj := setupTestApp(t)
+	err := app.securitySetup.SetAttribute(2, PolicyAuthenticatedRequest)
+	require.NoError(t, err)
 
 	req := &GetRequest{
 		Type:                GET_REQUEST_NORMAL,
@@ -195,7 +209,7 @@ func TestApplication_SecurityPolicy(t *testing.T) {
 	}
 	encodedReq, _ := req.Encode()
 
-	_, err := app.HandleAPDU(encodedReq, clientAddr)
+	_, err = app.HandleAPDU(encodedReq, clientAddr)
 	assert.Error(t, err)
 
 	header := &SecurityHeader{

@@ -74,7 +74,9 @@ func (c *Connection) Disconnect() ([]byte, error) {
 		return nil, nil
 	}
 	c.isConnected = false
-	c.conn.Close()
+	if err := c.conn.Close(); err != nil {
+		return nil, err
+	}
 	return nil, nil // No final message needed for WRAPPER protocol
 }
 
@@ -119,12 +121,7 @@ func (c *Connection) Receive(src []byte) ([][]byte, error) {
 
 	c.readBuffer.Write(src)
 
-	for {
-		if c.readBuffer.Len() < 8 {
-			// Not enough data for a frame header, wait for more data.
-			break
-		}
-
+	for c.readBuffer.Len() >= 8 {
 		header := c.readBuffer.Bytes()[:8]
 		length := uint16(header[6])<<8 | uint16(header[7])
 		frameLength := 8 + int(length)

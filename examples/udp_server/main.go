@@ -23,7 +23,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen on UDP: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("Failed to close UDP listener: %v", err)
+		}
+	}()
 	log.Printf("UDP HDLC server listening on %s", listenAddr)
 
 	buf := make([]byte, 2048)

@@ -304,26 +304,35 @@ func TestSelectiveReject(t *testing.T) {
 	server.state = StateConnected
 
 	// Send frames 0, 1, 3 (simulating lost frame 2)
-	frames0, _ := client.Send([]byte("frame0"))
-	frames1, _ := client.Send([]byte("frame1"))
+	frames0, err := client.Send([]byte("frame0"))
+	assert.NoError(t, err)
+	frames1, err := client.Send([]byte("frame1"))
+	assert.NoError(t, err)
 	client.sendSeq++ // Skip frame 2
-	frames3, _ := client.Send([]byte("frame3"))
+	frames3, err := client.Send([]byte("frame3"))
+	assert.NoError(t, err)
 
 	// Server receives frame 0
-	frame0, _ := DecodeFrame(frames0[0][1 : len(frames0[0])-1])
-	server.HandleFrame(frame0)
+	frame0, err := DecodeFrame(frames0[0][1 : len(frames0[0])-1])
+	assert.NoError(t, err)
+	_, err = server.HandleFrame(frame0)
+	assert.NoError(t, err)
 
 	// Server receives frame 1
-	frame1, _ := DecodeFrame(frames1[0][1 : len(frames1[0])-1])
-	server.HandleFrame(frame1)
+	frame1, err := DecodeFrame(frames1[0][1 : len(frames1[0])-1])
+	assert.NoError(t, err)
+	_, err = server.HandleFrame(frame1)
+	assert.NoError(t, err)
 
 	// Server receives frame 3 (out of order)
-	frame3, _ := DecodeFrame(frames3[0][1 : len(frames3[0])-1])
+	frame3, err := DecodeFrame(frames3[0][1 : len(frames3[0])-1])
+	assert.NoError(t, err)
 	srejFrameBytes, err := server.HandleFrame(frame3)
 	assert.NoError(t, err)
 
 	// Server should send SREJ for frame 2
-	srejFrame, _ := DecodeFrame(srejFrameBytes[1 : len(srejFrameBytes)-1])
+	srejFrame, err := DecodeFrame(srejFrameBytes[1 : len(srejFrameBytes)-1])
+	assert.NoError(t, err)
 	assert.Equal(t, FrameTypeS, srejFrame.Type)
 	assert.Equal(t, byte(SFrameSREJ), srejFrame.Control&0x0F)
 	assert.Equal(t, byte(2), (srejFrame.Control>>5)&0x07) // NR should be 2
@@ -338,7 +347,8 @@ func TestRetransmission(t *testing.T) {
 	client.state = StateConnected
 
 	// Send a frame
-	client.Send([]byte("frame0"))
+	_, err := client.Send([]byte("frame0"))
+	assert.NoError(t, err)
 
 	// Wait for retransmission
 	select {
@@ -357,12 +367,14 @@ func TestIFrameBuffering(t *testing.T) {
 
 	// Send frame 1 (out of order)
 	frame1 := &HDLCFrame{DA: []byte{0x2}, SA: []byte{0x1}, Type: FrameTypeI, NS: 1, Information: []byte("frame1")}
-	server.HandleFrame(frame1)
+	_, err := server.HandleFrame(frame1)
+	assert.NoError(t, err)
 	assert.Contains(t, server.recvBuffer, uint8(1))
 
 	// Send frame 0 (in order)
 	frame0 := &HDLCFrame{DA: []byte{0x2}, SA: []byte{0x1}, Type: FrameTypeI, NS: 0, Information: []byte("frame0")}
-	server.HandleFrame(frame0)
+	_, err = server.HandleFrame(frame0)
+	assert.NoError(t, err)
 
 	// Check that frame 1 was processed from the buffer
 	assert.NotContains(t, server.recvBuffer, uint8(1))

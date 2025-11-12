@@ -23,3 +23,4 @@ go.work.sum
 
 # Log files
 *.log
+docs/doxygen/
