@@ -253,16 +253,16 @@ func TestBaseImpl_Callbacks(t *testing.T) {
 	})
 
 	// Execute callbacks
-	preExecuteCalled := false
-	postExecuteCalled := false
-	base.SetPreExecuteCallback(func(methodID byte, params []interface{}, ctx interface{}) error {
-		preExecuteCalled = true
+	preActionCalled := false
+	postActionCalled := false
+	base.SetPreActionCallback(func(methodID byte, params []interface{}, ctx interface{}) error {
+		preActionCalled = true
 		assert.Equal(t, byte(1), methodID)
 		assert.Equal(t, "test_context", ctx)
 		return nil
 	})
-	base.SetPostExecuteCallback(func(methodID byte, params []interface{}, result interface{}, ctx interface{}) {
-		postExecuteCalled = true
+	base.SetPostActionCallback(func(methodID byte, params []interface{}, result interface{}, ctx interface{}) {
+		postActionCalled = true
 		assert.Equal(t, byte(1), methodID)
 		assert.Equal(t, 42, result)
 		assert.Equal(t, "test_context", ctx)
@@ -280,6 +280,6 @@ func TestBaseImpl_Callbacks(t *testing.T) {
 	assert.True(t, postReadCalled, "PostReadCallback was not called")
 	assert.True(t, preWriteCalled, "PreWriteCallback was not called")
 	assert.True(t, postWriteCalled, "PostWriteCallback was not called")
-	assert.True(t, preExecuteCalled, "PreExecuteCallback was not called")
-	assert.True(t, postExecuteCalled, "PostExecuteCallback was not called")
+	assert.True(t, preActionCalled, "PreActionCallback was not called")
+	assert.True(t, postActionCalled, "PostActionCallback was not called")
 }
