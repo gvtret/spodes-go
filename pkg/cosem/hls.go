@@ -159,11 +159,16 @@ func encryptCBCandGMAC(key, plaintext, serverSystemTitle []byte, header *Securit
 	mode.CryptBlocks(ciphertext, paddedPlaintext)
 
 	// Authenticate
-	additionalData, err := header.Encode()
+	headerBytes, err := header.Encode()
 	if err != nil {
 		return nil, err
 	}
-	tag, err := gmac(key, ciphertext, additionalData)
+	authenticatedData := make([]byte, len(headerBytes)+len(ciphertext))
+	copy(authenticatedData, headerBytes)
+	copy(authenticatedData[len(headerBytes):], ciphertext)
+
+	nonce := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	tag, err := gmac(key, nonce, authenticatedData)
 	if err != nil {
 		return nil, err
 	}
@@ -186,11 +191,16 @@ func decryptCBCandGMAC(key, ciphertext, serverSystemTitle []byte, header *Securi
 	// Verify tag
 	tag := ciphertext[len(ciphertext)-12:]
 	ciphertext = ciphertext[:len(ciphertext)-12]
-	additionalData, err := header.Encode()
+	headerBytes, err := header.Encode()
 	if err != nil {
 		return nil, err
 	}
-	expectedTag, err := gmac(key, ciphertext, additionalData)
+	authenticatedData := make([]byte, len(headerBytes)+len(ciphertext))
+	copy(authenticatedData, headerBytes)
+	copy(authenticatedData[len(headerBytes):], ciphertext)
+
+	nonce := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	expectedTag, err := gmac(key, nonce, authenticatedData)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +243,7 @@ func makeCBCIV(block cipher.Block, systemTitle []byte, frameCounter uint32) []by
 	return iv
 }
 
-func gmac(key, data, additionalData []byte) ([]byte, error) {
+func gmac(key, nonce, authenticatedData []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -242,8 +252,11 @@ func gmac(key, data, additionalData []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	nonce := make([]byte, gcm.NonceSize())
-	tag := gcm.Seal(nil, nonce, data, additionalData)
+	if len(nonce) != gcm.NonceSize() {
+		return nil, fmt.Errorf("invalid nonce size: got %d, want %d", len(nonce), gcm.NonceSize())
+	}
+
+	tag := gcm.Seal(nil, nonce, nil, authenticatedData)
 	return tag[len(tag)-12:], nil
 }
 

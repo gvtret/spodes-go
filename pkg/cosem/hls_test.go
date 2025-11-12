@@ -74,6 +74,64 @@ func TestDecryptAndVerify_ReplayAttack(t *testing.T) {
 	assert.Equal(t, ErrReplayAttack, err)
 }
 
+func TestEncryptCBCandGMAC_TagVariesWithFrameCounter(t *testing.T) {
+	key := []byte("0123456789ABCDEF")
+	plaintext := []byte("Hello, COSEM!")
+	serverSystemTitle := []byte("SERVER01")
+
+	header1 := &SecurityHeader{
+		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+		FrameCounter:    1,
+	}
+
+	ciphertext1, err := encryptCBCandGMAC(key, plaintext, serverSystemTitle, header1)
+	require.NoError(t, err)
+
+	header2 := &SecurityHeader{
+		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+		FrameCounter:    2,
+	}
+
+	ciphertext2, err := encryptCBCandGMAC(key, plaintext, serverSystemTitle, header2)
+	require.NoError(t, err)
+
+	tag1 := ciphertext1[len(ciphertext1)-12:]
+	tag2 := ciphertext2[len(ciphertext2)-12:]
+
+	assert.NotEqual(t, tag1, tag2, "tags should differ when frame counter changes")
+}
+
+func TestDecryptCBCandGMAC_DetectsTampering(t *testing.T) {
+	key := []byte("0123456789ABCDEF")
+	plaintext := []byte("Hello, COSEM!")
+	serverSystemTitle := []byte("SERVER01")
+	header := &SecurityHeader{
+		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+		FrameCounter:    1,
+	}
+
+	ciphertext, err := encryptCBCandGMAC(key, plaintext, serverSystemTitle, header)
+	require.NoError(t, err)
+
+	t.Run("frame counter tampering", func(t *testing.T) {
+		tamperedHeader := &SecurityHeader{
+			SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+			FrameCounter:    2,
+		}
+
+		_, err := decryptCBCandGMAC(key, ciphertext, serverSystemTitle, tamperedHeader, 0)
+		assert.ErrorIs(t, err, ErrAuthenticationFailed)
+	})
+
+	t.Run("ciphertext tampering", func(t *testing.T) {
+		tamperedCiphertext := append([]byte(nil), ciphertext...)
+		tamperedCiphertext[0] ^= 0xFF
+
+		_, err := decryptCBCandGMAC(key, tamperedCiphertext, serverSystemTitle, header, 0)
+		assert.ErrorIs(t, err, ErrAuthenticationFailed)
+	})
+}
+
 func TestApplication_HandleAPDU_Secured(t *testing.T) {
 	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
 	associationLN, _ := NewAssociationLN(*obisAssociationLN)
