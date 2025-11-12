@@ -17,6 +17,11 @@ const (
 	APDU_GLO_ACTION_RESPONSE APDUType = 0xCF
 )
 
+const (
+	gcmNonceSize       = 12
+	gcmSystemTitleSize = 8
+)
+
 // SecurityControl byte flags.
 const (
 	SecurityControlAuthenticationOnly        SecurityControl = 0x10
@@ -68,11 +73,20 @@ func (h *SecurityHeader) Decode(src []byte) error {
 func EncryptAndTag(key, plaintext, serverSystemTitle []byte, header *SecurityHeader, suite SecuritySuite) ([]byte, error) {
 	switch suite {
 	case SecuritySuite0:
+		if err := validateKeyLength(key, suite); err != nil {
+			return nil, err
+		}
 		return encryptGCM(key, plaintext, serverSystemTitle, header)
 	case SecuritySuite1, SecuritySuite2:
+		if err := validateKeyLength(key, suite); err != nil {
+			return nil, err
+		}
 		return encryptCBCandGMAC(key, plaintext, serverSystemTitle, header)
-	case SecuritySuite3:
-		return encryptKuznCmac(key, plaintext, serverSystemTitle, header)
+	case SecuritySuite3, SecuritySuite4:
+		if err := validateKeyLength(key, suite); err != nil {
+			return nil, err
+		}
+		return encryptKuznCmac(key, plaintext, serverSystemTitle, header, suite)
 	default:
 		return nil, fmt.Errorf("unsupported security suite: %d", suite)
 	}
@@ -82,11 +96,20 @@ func EncryptAndTag(key, plaintext, serverSystemTitle []byte, header *SecurityHea
 func DecryptAndVerify(key, ciphertext, serverSystemTitle []byte, header *SecurityHeader, suite SecuritySuite, lastFrameCounter uint32) ([]byte, error) {
 	switch suite {
 	case SecuritySuite0:
+		if err := validateKeyLength(key, suite); err != nil {
+			return nil, err
+		}
 		return decryptGCM(key, ciphertext, serverSystemTitle, header, lastFrameCounter)
 	case SecuritySuite1, SecuritySuite2:
+		if err := validateKeyLength(key, suite); err != nil {
+			return nil, err
+		}
 		return decryptCBCandGMAC(key, ciphertext, serverSystemTitle, header, lastFrameCounter)
-	case SecuritySuite3:
-		return decryptKuznCmac(key, ciphertext, serverSystemTitle, header, lastFrameCounter)
+	case SecuritySuite3, SecuritySuite4:
+		if err := validateKeyLength(key, suite); err != nil {
+			return nil, err
+		}
+		return decryptKuznCmac(key, ciphertext, serverSystemTitle, header, suite, lastFrameCounter)
 	default:
 		return nil, fmt.Errorf("unsupported security suite: %d", suite)
 	}
@@ -98,12 +121,15 @@ func encryptGCM(key, plaintext, serverSystemTitle []byte, header *SecurityHeader
 		return nil, err
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
+	aesgcm, err := cipher.NewGCMWithNonceSize(block, gcmNonceSize)
 	if err != nil {
 		return nil, err
 	}
 
-	nonce := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	nonce, err := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	if err != nil {
+		return nil, err
+	}
 	additionalData, err := header.Encode()
 	if err != nil {
 		return nil, err
@@ -123,12 +149,15 @@ func decryptGCM(key, ciphertext, serverSystemTitle []byte, header *SecurityHeade
 		return nil, err
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
+	aesgcm, err := cipher.NewGCMWithNonceSize(block, gcmNonceSize)
 	if err != nil {
 		return nil, err
 	}
 
-	nonce := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	nonce, err := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	if err != nil {
+		return nil, err
+	}
 	additionalData, err := header.Encode()
 	if err != nil {
 		return nil, err
@@ -167,7 +196,10 @@ func encryptCBCandGMAC(key, plaintext, serverSystemTitle []byte, header *Securit
 	copy(authenticatedData, headerBytes)
 	copy(authenticatedData[len(headerBytes):], ciphertext)
 
-	nonce := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	nonce, err := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	if err != nil {
+		return nil, err
+	}
 	tag, err := gmac(key, nonce, authenticatedData)
 	if err != nil {
 		return nil, err
@@ -202,7 +234,10 @@ func decryptCBCandGMAC(key, ciphertext, serverSystemTitle []byte, header *Securi
 	copy(authenticatedData, headerBytes)
 	copy(authenticatedData[len(headerBytes):], ciphertext)
 
-	nonce := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	nonce, err := makeGCMNonce(serverSystemTitle, header.FrameCounter)
+	if err != nil {
+		return nil, err
+	}
 	expectedTag, err := gmac(key, nonce, authenticatedData)
 	if err != nil {
 		return nil, err
@@ -224,14 +259,33 @@ func decryptCBCandGMAC(key, ciphertext, serverSystemTitle []byte, header *Securi
 	return unpaddedPlaintext, nil
 }
 
-func makeGCMNonce(systemTitle []byte, frameCounter uint32) []byte {
-	nonce := make([]byte, 12)
-	copy(nonce, systemTitle)
+func makeGCMNonce(systemTitle []byte, frameCounter uint32) ([]byte, error) {
+	if len(systemTitle) < gcmSystemTitleSize {
+		return nil, fmt.Errorf("system title must be at least %d bytes: got %d", gcmSystemTitleSize, len(systemTitle))
+	}
+	nonce := make([]byte, gcmNonceSize)
+	copy(nonce, systemTitle[:gcmSystemTitleSize])
 	nonce[8] = byte(frameCounter >> 24)
 	nonce[9] = byte(frameCounter >> 16)
 	nonce[10] = byte(frameCounter >> 8)
 	nonce[11] = byte(frameCounter)
-	return nonce
+	return nonce, nil
+}
+
+func validateKeyLength(key []byte, suite SecuritySuite) error {
+	var expected int
+	switch suite {
+	case SecuritySuite0, SecuritySuite1:
+		expected = 16
+	case SecuritySuite2, SecuritySuite3, SecuritySuite4:
+		expected = 32
+	default:
+		return fmt.Errorf("unsupported security suite: %d", suite)
+	}
+	if len(key) != expected {
+		return fmt.Errorf("invalid key length for suite %d: got %d, want %d", suite, len(key), expected)
+	}
+	return nil
 }
 
 func makeCBCIV(block cipher.Block, systemTitle []byte, frameCounter uint32) []byte {

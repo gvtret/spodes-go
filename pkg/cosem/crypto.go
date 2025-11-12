@@ -52,7 +52,7 @@ func SignECDSA(priv *ecdsa.PrivateKey, msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	params := priv.Curve.Params()
+	params := priv.Params()
 	if params == nil {
 		return nil, ErrInvalidPrivateKey
 	}
@@ -79,7 +79,7 @@ func VerifyECDSA(pub *ecdsa.PublicKey, msg, sig []byte) error {
 	if pub == nil {
 		return ErrInvalidPublicKey
 	}
-	params := pub.Curve.Params()
+	params := pub.Params()
 	if params == nil {
 		return ErrInvalidPublicKey
 	}
