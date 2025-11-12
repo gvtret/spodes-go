@@ -11,20 +11,21 @@ import (
 // Application represents a COSEM application layer instance.
 // It holds and manages all the COSEM objects.
 type Application struct {
-	objects          map[string]BaseInterface
-	associations     map[string]*AssociationLN
-	securitySetup    *SecuritySetup
-	transport        transport.Transport
-	lastFrameCounter uint32
+	objects           map[string]BaseInterface
+	associations      map[string]*AssociationLN
+	securitySetup     *SecuritySetup
+	transport         transport.Transport
+	lastFrameCounters map[*AssociationLN]uint32
 }
 
 // NewApplication creates a new COSEM application instance.
 func NewApplication(transport transport.Transport, securitySetup *SecuritySetup) *Application {
 	app := &Application{
-		objects:       make(map[string]BaseInterface),
-		associations:  make(map[string]*AssociationLN),
-		transport:     transport,
-		securitySetup: securitySetup,
+		objects:           make(map[string]BaseInterface),
+		associations:      make(map[string]*AssociationLN),
+		transport:         transport,
+		securitySetup:     securitySetup,
+		lastFrameCounters: make(map[*AssociationLN]uint32),
 	}
 	// Register the SecuritySetup object
 	app.RegisterObject(securitySetup)
@@ -34,6 +35,7 @@ func NewApplication(transport transport.Transport, securitySetup *SecuritySetup)
 // AddAssociation maps a client address string to a specific AssociationLN instance.
 func (app *Application) AddAssociation(address string, assoc *AssociationLN) {
 	app.associations[address] = assoc
+	app.lastFrameCounters[assoc] = 0
 	// Register the AssociationLN object itself
 	app.RegisterObject(assoc)
 }
@@ -127,11 +129,13 @@ func (app *Application) handleSecuredAPDU(apduType APDUType, src []byte, assoc *
 		return nil, err
 	}
 
-	plaintext, err := DecryptAndVerify(key, src[6:], serverSystemTitle.([]byte), header, suite.(SecuritySuite), app.lastFrameCounter)
+	lastFrameCounter := app.lastFrameCounters[assoc]
+
+	plaintext, err := DecryptAndVerify(key, src[6:], serverSystemTitle.([]byte), header, suite.(SecuritySuite), lastFrameCounter)
 	if err != nil {
 		return nil, err
 	}
-	app.lastFrameCounter = header.FrameCounter
+	app.lastFrameCounters[assoc] = header.FrameCounter
 
 	respAPDU, err := app.dispatchAPDU(plaintext, assoc)
 	if err != nil {

@@ -43,6 +43,89 @@ func setupTestApp(t *testing.T) (*Application, *AssociationLN, net.Addr, *Data) 
 	return app, associationLN, clientAddr, dataObj
 }
 
+func TestApplication_SecuredAPDUMaintainsIndependentCounters(t *testing.T) {
+	obisAssociationLN, err := NewObisCodeFromString("0.0.40.0.0.255")
+	require.NoError(t, err)
+
+	assocClient1, err := NewAssociationLN(*obisAssociationLN)
+	require.NoError(t, err)
+	assocClient2, err := NewAssociationLN(*obisAssociationLN)
+	require.NoError(t, err)
+
+	obisSecurity, err := NewObisCodeFromString("0.0.43.0.0.255")
+	require.NoError(t, err)
+
+	serverSystemTitle := []byte("SERVER01")
+	guek := []byte("0123456789ABCDEF")
+
+	securitySetup, err := NewSecuritySetup(*obisSecurity, nil, serverSystemTitle, nil, guek, nil)
+	require.NoError(t, err)
+	err = securitySetup.SetAttribute(2, SecurityPolicy(PolicyAuthenticatedRequest|PolicyEncryptedRequest))
+	require.NoError(t, err)
+	err = securitySetup.SetAttribute(3, SecuritySuite0)
+	require.NoError(t, err)
+
+	app := NewApplication(nil, securitySetup)
+
+	clientAddr1 := mockAddr("secured-client1")
+	clientAddr2 := mockAddr("secured-client2")
+
+	app.AddAssociation(clientAddr1.String(), assocClient1)
+	app.AddAssociation(clientAddr2.String(), assocClient2)
+
+	obis, err := NewObisCodeFromString("1.0.0.3.0.255")
+	require.NoError(t, err)
+	dataObj, err := NewData(*obis, uint32(98765))
+	require.NoError(t, err)
+	app.RegisterObject(dataObj)
+
+	err = app.PopulateObjectList(assocClient1, []ObisCode{*obis})
+	require.NoError(t, err)
+	err = app.PopulateObjectList(assocClient2, []ObisCode{*obis})
+	require.NoError(t, err)
+
+	req := &GetRequest{
+		Type:                GET_REQUEST_NORMAL,
+		InvokeIDAndPriority: 0x81,
+		AttributeDescriptor: CosemAttributeDescriptor{
+			ClassID:     DataClassID,
+			InstanceID:  dataObj.InstanceID,
+			AttributeID: 2,
+		},
+	}
+
+	encodedReq, err := req.Encode()
+	require.NoError(t, err)
+
+	buildSecured := func(frameCounter uint32) []byte {
+		header := &SecurityHeader{
+			SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+			FrameCounter:    frameCounter,
+		}
+		ciphertext, err := EncryptAndTag(guek, encodedReq, serverSystemTitle, header, SecuritySuite0)
+		require.NoError(t, err)
+		encodedHeader, err := header.Encode()
+		require.NoError(t, err)
+		return append([]byte{byte(APDU_GLO_GET_REQUEST)}, append(encodedHeader, ciphertext...)...)
+	}
+
+	// First request from client 1 should succeed with frame counter 1
+	securedReq := buildSecured(1)
+	_, err = app.HandleAPDU(securedReq, clientAddr1)
+	require.NoError(t, err)
+
+	// Client 2 should be able to use its own frame counter starting at 1 as well
+	securedReq = buildSecured(1)
+	_, err = app.HandleAPDU(securedReq, clientAddr2)
+	require.NoError(t, err)
+
+	// Replaying the same frame counter for client 1 should now be rejected
+	securedReq = buildSecured(1)
+	_, err = app.HandleAPDU(securedReq, clientAddr1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrReplayAttack)
+}
+
 func TestApplication_HandleGetRequest(t *testing.T) {
 	app, _, clientAddr, dataObj := setupTestApp(t)
 
