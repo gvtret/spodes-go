@@ -52,7 +52,26 @@ func SignECDSA(priv *ecdsa.PrivateKey, msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(r.Bytes(), s.Bytes()...), nil
+	params := priv.Curve.Params()
+	if params == nil {
+		return nil, ErrInvalidPrivateKey
+	}
+
+	coordinateSize := (params.BitSize + 7) / 8
+
+	rBytes, err := padScalar(r.Bytes(), coordinateSize)
+	if err != nil {
+		return nil, err
+	}
+	sBytes, err := padScalar(s.Bytes(), coordinateSize)
+	if err != nil {
+		return nil, err
+	}
+
+	sig := make([]byte, 0, 2*coordinateSize)
+	sig = append(sig, rBytes...)
+	sig = append(sig, sBytes...)
+	return sig, nil
 }
 
 // VerifyECDSA verifies a signature using the provided public key.
@@ -60,12 +79,31 @@ func VerifyECDSA(pub *ecdsa.PublicKey, msg, sig []byte) error {
 	if pub == nil {
 		return ErrInvalidPublicKey
 	}
-	r := new(big.Int).SetBytes(sig[:32])
-	s := new(big.Int).SetBytes(sig[32:])
+	params := pub.Curve.Params()
+	if params == nil {
+		return ErrInvalidPublicKey
+	}
+
+	coordinateSize := (params.BitSize + 7) / 8
+	if len(sig) != 2*coordinateSize {
+		return ErrInvalidSignature
+	}
+
+	r := new(big.Int).SetBytes(sig[:coordinateSize])
+	s := new(big.Int).SetBytes(sig[coordinateSize:])
 	if !ecdsa.Verify(pub, msg, r, s) {
 		return ErrInvalidSignature
 	}
 	return nil
+}
+
+func padScalar(b []byte, size int) ([]byte, error) {
+	if len(b) > size {
+		return nil, fmt.Errorf("scalar length %d exceeds size %d", len(b), size)
+	}
+	out := make([]byte, size)
+	copy(out[size-len(b):], b)
+	return out, nil
 }
 
 // MarshalPublicKey marshals a public key into a byte slice.
