@@ -218,30 +218,41 @@ func TestApplication_HandleAPDU_Secured(t *testing.T) {
 	}
 	encodedReq, _ := req.Encode()
 
-	header := &SecurityHeader{
-		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
-		FrameCounter:    1,
+	buildRequest := func(counter uint32) []byte {
+		header := &SecurityHeader{
+			SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+			FrameCounter:    counter,
+		}
+
+		ciphertext, err := EncryptAndTag(guek, encodedReq, serverSystemTitle, header, SecuritySuite1)
+		assert.NoError(t, err)
+		encodedHeader, _ := header.Encode()
+		return append([]byte{byte(APDU_GLO_GET_REQUEST)}, append(encodedHeader, ciphertext...)...)
 	}
 
-	ciphertext, err := EncryptAndTag(guek, encodedReq, serverSystemTitle, header, SecuritySuite1)
-	assert.NoError(t, err)
-	encodedHeader, _ := header.Encode()
-	securedReq := append([]byte{byte(APDU_GLO_GET_REQUEST)}, append(encodedHeader, ciphertext...)...)
+	lastServerCounter := associationLN.ServerInvocationCounter()
 
-	encodedResp, err := app.HandleAPDU(securedReq, clientAddr)
-	assert.NoError(t, err)
+	for i := uint32(1); i <= 2; i++ {
+		securedReq := buildRequest(i)
 
-	respHeader := &SecurityHeader{}
-	err = respHeader.Decode(encodedResp[1:])
-	assert.NoError(t, err)
+		encodedResp, err := app.HandleAPDU(securedReq, clientAddr)
+		assert.NoError(t, err)
 
-	plaintext, err := DecryptAndVerify(guek, encodedResp[6:], serverSystemTitle, respHeader, SecuritySuite1, 0)
-	assert.NoError(t, err)
+		respHeader := &SecurityHeader{}
+		err = respHeader.Decode(encodedResp[1:])
+		assert.NoError(t, err)
+		assert.Equal(t, lastServerCounter+1, respHeader.FrameCounter)
 
-	resp := &GetResponse{}
-	err = resp.Decode(plaintext)
-	assert.NoError(t, err)
+		plaintext, err := DecryptAndVerify(guek, encodedResp[6:], serverSystemTitle, respHeader, SecuritySuite1, lastServerCounter)
+		assert.NoError(t, err)
 
-	assert.False(t, resp.Result.IsDataAccessResult)
-	assert.Equal(t, uint32(12345), resp.Result.Value.(uint32))
+		lastServerCounter = respHeader.FrameCounter
+
+		resp := &GetResponse{}
+		err = resp.Decode(plaintext)
+		assert.NoError(t, err)
+
+		assert.False(t, resp.Result.IsDataAccessResult)
+		assert.Equal(t, uint32(12345), resp.Result.Value.(uint32))
+	}
 }

@@ -126,6 +126,96 @@ func TestApplication_SecuredAPDUMaintainsIndependentCounters(t *testing.T) {
 	require.ErrorIs(t, err, ErrReplayAttack)
 }
 
+func TestApplication_SecuredResponsesUseIncrementingCounters(t *testing.T) {
+	obisAssociationLN, err := NewObisCodeFromString("0.0.40.0.0.255")
+	require.NoError(t, err)
+
+	assoc, err := NewAssociationLN(*obisAssociationLN)
+	require.NoError(t, err)
+	assoc.SetServerInvocationCounter(41)
+
+	obisSecurity, err := NewObisCodeFromString("0.0.43.0.0.255")
+	require.NoError(t, err)
+
+	serverSystemTitle := []byte("SERVER01")
+	guek := []byte("0123456789ABCDEF")
+
+	securitySetup, err := NewSecuritySetup(*obisSecurity, nil, serverSystemTitle, nil, guek, nil)
+	require.NoError(t, err)
+	err = securitySetup.SetAttribute(2, SecurityPolicy(PolicyAuthenticatedRequest|PolicyEncryptedRequest))
+	require.NoError(t, err)
+	err = securitySetup.SetAttribute(3, SecuritySuite0)
+	require.NoError(t, err)
+
+	app := NewApplication(nil, securitySetup)
+	clientAddr := mockAddr("secured-client")
+	app.AddAssociation(clientAddr.String(), assoc)
+
+	obis, err := NewObisCodeFromString("1.0.0.3.0.255")
+	require.NoError(t, err)
+	dataObj, err := NewData(*obis, uint32(54321))
+	require.NoError(t, err)
+	app.RegisterObject(dataObj)
+
+	err = app.PopulateObjectList(assoc, []ObisCode{*obis})
+	require.NoError(t, err)
+
+	req := &GetRequest{
+		Type:                GET_REQUEST_NORMAL,
+		InvokeIDAndPriority: 0x81,
+		AttributeDescriptor: CosemAttributeDescriptor{
+			ClassID:     DataClassID,
+			InstanceID:  dataObj.InstanceID,
+			AttributeID: 2,
+		},
+	}
+
+	encodedReq, err := req.Encode()
+	require.NoError(t, err)
+
+	buildRequest := func(frameCounter uint32) []byte {
+		header := &SecurityHeader{
+			SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+			FrameCounter:    frameCounter,
+		}
+		ciphertext, err := EncryptAndTag(guek, encodedReq, serverSystemTitle, header, SecuritySuite0)
+		require.NoError(t, err)
+		encodedHeader, err := header.Encode()
+		require.NoError(t, err)
+		return append([]byte{byte(APDU_GLO_GET_REQUEST)}, append(encodedHeader, ciphertext...)...)
+	}
+
+	expectedCounter := assoc.ServerInvocationCounter()
+	lastServerCounter := expectedCounter
+
+	for i := uint32(1); i <= 2; i++ {
+		securedReq := buildRequest(i)
+
+		encodedResp, err := app.HandleAPDU(securedReq, clientAddr)
+		require.NoError(t, err)
+
+		require.Equal(t, byte(APDU_GLO_GET_RESPONSE), encodedResp[0])
+
+		respHeader := &SecurityHeader{}
+		err = respHeader.Decode(encodedResp[1:])
+		require.NoError(t, err)
+
+		expectedCounter++
+		require.Equal(t, expectedCounter, respHeader.FrameCounter)
+
+		plaintext, err := DecryptAndVerify(guek, encodedResp[6:], serverSystemTitle, respHeader, SecuritySuite0, lastServerCounter)
+		require.NoError(t, err)
+
+		lastServerCounter = respHeader.FrameCounter
+
+		resp := &GetResponse{}
+		err = resp.Decode(plaintext)
+		require.NoError(t, err)
+		require.False(t, resp.Result.IsDataAccessResult)
+		require.Equal(t, uint32(54321), resp.Result.Value.(uint32))
+	}
+}
+
 func TestApplication_HandleGetRequest(t *testing.T) {
 	app, _, clientAddr, dataObj := setupTestApp(t)
 

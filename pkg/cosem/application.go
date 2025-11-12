@@ -11,21 +11,23 @@ import (
 // Application represents a COSEM application layer instance.
 // It holds and manages all the COSEM objects.
 type Application struct {
-	objects           map[string]BaseInterface
-	associations      map[string]*AssociationLN
-	securitySetup     *SecuritySetup
-	transport         transport.Transport
-	lastFrameCounters map[*AssociationLN]uint32
+	objects             map[string]BaseInterface
+	associations        map[string]*AssociationLN
+	securitySetup       *SecuritySetup
+	transport           transport.Transport
+	lastFrameCounters   map[*AssociationLN]uint32
+	serverFrameCounters map[*AssociationLN]uint32
 }
 
 // NewApplication creates a new COSEM application instance.
 func NewApplication(transport transport.Transport, securitySetup *SecuritySetup) *Application {
 	app := &Application{
-		objects:           make(map[string]BaseInterface),
-		associations:      make(map[string]*AssociationLN),
-		transport:         transport,
-		securitySetup:     securitySetup,
-		lastFrameCounters: make(map[*AssociationLN]uint32),
+		objects:             make(map[string]BaseInterface),
+		associations:        make(map[string]*AssociationLN),
+		transport:           transport,
+		securitySetup:       securitySetup,
+		lastFrameCounters:   make(map[*AssociationLN]uint32),
+		serverFrameCounters: make(map[*AssociationLN]uint32),
 	}
 	// Register the SecuritySetup object
 	app.RegisterObject(securitySetup)
@@ -36,6 +38,7 @@ func NewApplication(transport transport.Transport, securitySetup *SecuritySetup)
 func (app *Application) AddAssociation(address string, assoc *AssociationLN) {
 	app.associations[address] = assoc
 	app.lastFrameCounters[assoc] = 0
+	app.serverFrameCounters[assoc] = assoc.ServerInvocationCounter()
 	// Register the AssociationLN object itself
 	app.RegisterObject(assoc)
 }
@@ -148,9 +151,13 @@ func (app *Application) handleSecuredAPDU(apduType APDUType, src []byte, assoc *
 		return nil, err
 	}
 
+	nextFrameCounter := app.serverFrameCounters[assoc] + 1
+	app.serverFrameCounters[assoc] = nextFrameCounter
+	assoc.SetServerInvocationCounter(nextFrameCounter)
+
 	respHeader := &SecurityHeader{
 		SecurityControl: header.SecurityControl,
-		FrameCounter:    header.FrameCounter,
+		FrameCounter:    nextFrameCounter,
 	}
 
 	ciphertext, err := EncryptAndTag(key, encodedResp, serverSystemTitle.([]byte), respHeader, suite.(SecuritySuite))
