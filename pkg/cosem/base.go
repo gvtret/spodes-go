@@ -94,14 +94,14 @@ type (
 	// It receives the attribute ID, the written value, and context.
 	PostWriteCallback func(attributeID byte, value interface{}, ctx interface{})
 
-	// PreExecuteCallback is invoked before a method is executed.
+	// PreActionCallback is invoked before a method is executed.
 	// It receives the method ID, parameters, and context.
 	// It can return an error to abort the execution.
-	PreExecuteCallback func(methodID byte, params []interface{}, ctx interface{}) error
+	PreActionCallback func(methodID byte, params []interface{}, ctx interface{}) error
 
-	// PostExecuteCallback is invoked after a method is successfully executed.
+	// PostActionCallback is invoked after a method is successfully executed.
 	// It receives the method ID, parameters, the result, and context.
-	PostExecuteCallback func(methodID byte, params []interface{}, result interface{}, ctx interface{})
+	PostActionCallback func(methodID byte, params []interface{}, result interface{}, ctx interface{})
 )
 
 // BaseInterface is an interface for a GXDLMS object.
@@ -119,8 +119,8 @@ type BaseInterface interface {
 	SetPostReadCallback(cb PostReadCallback)
 	SetPreWriteCallback(cb PreWriteCallback)
 	SetPostWriteCallback(cb PostWriteCallback)
-	SetPreExecuteCallback(cb PreExecuteCallback)
-	SetPostExecuteCallback(cb PostExecuteCallback)
+	SetPreActionCallback(cb PreActionCallback)
+	SetPostActionCallback(cb PostActionCallback)
 	SetCallbackContext(ctx interface{})
 }
 
@@ -128,17 +128,17 @@ type BaseInterface interface {
 //
 // It contains the class ID, instance ID, attributes, and methods of the object.
 type BaseImpl struct {
-	ClassID             uint16
-	InstanceID          ObisCode
-	Attributes          map[byte]AttributeDescriptor
-	Methods             map[byte]MethodDescriptor
-	PreReadCallback     PreReadCallback
-	PostReadCallback    PostReadCallback
-	PreWriteCallback    PreWriteCallback
-	PostWriteCallback   PostWriteCallback
-	PreExecuteCallback  PreExecuteCallback
-	PostExecuteCallback PostExecuteCallback
-	CallbackContext     interface{}
+	ClassID            uint16
+	InstanceID         ObisCode
+	Attributes         map[byte]AttributeDescriptor
+	Methods            map[byte]MethodDescriptor
+	PreReadCallback    PreReadCallback
+	PostReadCallback   PostReadCallback
+	PreWriteCallback   PreWriteCallback
+	PostWriteCallback  PostWriteCallback
+	PreActionCallback  PreActionCallback
+	PostActionCallback PostActionCallback
+	CallbackContext    interface{}
 }
 
 // GetClassID gets COSEM object class ID
@@ -211,8 +211,8 @@ func (b *BaseImpl) SetAttribute(attributeID byte, value interface{}) error {
 // The methodID is the ID of the method to be invoked.
 // The parameters are the parameters to be passed to the method.
 func (b *BaseImpl) Invoke(methodID byte, parameters []interface{}) (interface{}, error) {
-	if b.PreExecuteCallback != nil {
-		if err := b.PreExecuteCallback(methodID, parameters, b.CallbackContext); err != nil {
+	if b.PreActionCallback != nil {
+		if err := b.PreActionCallback(methodID, parameters, b.CallbackContext); err != nil {
 			return nil, err
 		}
 	}
@@ -241,8 +241,8 @@ func (b *BaseImpl) Invoke(methodID byte, parameters []interface{}) (interface{},
 		return nil, err
 	}
 
-	if b.PostExecuteCallback != nil {
-		b.PostExecuteCallback(methodID, parameters, result, b.CallbackContext)
+	if b.PostActionCallback != nil {
+		b.PostActionCallback(methodID, parameters, result, b.CallbackContext)
 	}
 	return result, nil
 }
@@ -287,14 +287,14 @@ func (b *BaseImpl) SetPostWriteCallback(cb PostWriteCallback) {
 	b.PostWriteCallback = cb
 }
 
-// SetPreExecuteCallback sets the pre-execute callback.
-func (b *BaseImpl) SetPreExecuteCallback(cb PreExecuteCallback) {
-	b.PreExecuteCallback = cb
+// SetPreActionCallback sets the pre-action callback.
+func (b *BaseImpl) SetPreActionCallback(cb PreActionCallback) {
+	b.PreActionCallback = cb
 }
 
-// SetPostExecuteCallback sets the post-execute callback.
-func (b *BaseImpl) SetPostExecuteCallback(cb PostExecuteCallback) {
-	b.PostExecuteCallback = cb
+// SetPostActionCallback sets the post-action callback.
+func (b *BaseImpl) SetPostActionCallback(cb PostActionCallback) {
+	b.PostActionCallback = cb
 }
 
 // SetCallbackContext sets the callback context.
