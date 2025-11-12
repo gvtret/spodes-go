@@ -189,6 +189,9 @@ func decryptCBCandGMAC(key, ciphertext, serverSystemTitle []byte, header *Securi
 	iv := makeCBCIV(block, serverSystemTitle, header.FrameCounter)
 
 	// Verify tag
+	if len(ciphertext) < 12 {
+		return nil, ErrAuthenticationFailed
+	}
 	tag := ciphertext[len(ciphertext)-12:]
 	ciphertext = ciphertext[:len(ciphertext)-12]
 	headerBytes, err := header.Encode()
@@ -248,7 +251,7 @@ func gmac(key, nonce, authenticatedData []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithTagSize(block, 12)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +260,7 @@ func gmac(key, nonce, authenticatedData []byte) ([]byte, error) {
 	}
 
 	tag := gcm.Seal(nil, nonce, nil, authenticatedData)
-	return tag[len(tag)-12:], nil
+	return tag, nil
 }
 
 func pkcs7Pad(data []byte, blockSize int) ([]byte, error) {

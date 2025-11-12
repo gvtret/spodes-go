@@ -1,6 +1,7 @@
 package cosem
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,6 +100,53 @@ func TestEncryptCBCandGMAC_TagVariesWithFrameCounter(t *testing.T) {
 	tag2 := ciphertext2[len(ciphertext2)-12:]
 
 	assert.NotEqual(t, tag1, tag2, "tags should differ when frame counter changes")
+}
+
+func TestEncryptCBCandGMAC_KnownGoodTag(t *testing.T) {
+	plaintext := []byte("Hello, COSEM!")
+	serverSystemTitle := []byte("SERVER01")
+
+	testCases := []struct {
+		name        string
+		key         []byte
+		suite       SecuritySuite
+		expectedTag string
+	}{
+		{
+			name:        "suite1",
+			key:         []byte("0123456789ABCDEF"),
+			suite:       SecuritySuite1,
+			expectedTag: "041580fc210fca507be5471a",
+		},
+		{
+			name:        "suite2",
+			key:         []byte("0123456789ABCDEF0123456789ABCDEF"),
+			suite:       SecuritySuite2,
+			expectedTag: "19cfec5e5a42efdb631d9c01",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			header := &SecurityHeader{
+				SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+				FrameCounter:    1,
+			}
+
+			ciphertext, err := EncryptAndTag(tc.key, plaintext, serverSystemTitle, header, tc.suite)
+			require.NoError(t, err)
+
+			require.GreaterOrEqual(t, len(ciphertext), 12)
+			expectedTag, err := hex.DecodeString(tc.expectedTag)
+			require.NoError(t, err)
+
+			assert.Equal(t, expectedTag, ciphertext[len(ciphertext)-12:])
+
+			decrypted, err := DecryptAndVerify(tc.key, ciphertext, serverSystemTitle, header, tc.suite, 0)
+			require.NoError(t, err)
+			assert.Equal(t, plaintext, decrypted)
+		})
+	}
 }
 
 func TestDecryptCBCandGMAC_DetectsTampering(t *testing.T) {
