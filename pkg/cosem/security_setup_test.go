@@ -31,6 +31,12 @@ func TestNewSecuritySetup(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, SecuritySuite0, val.(SecuritySuite))
 
+	err = securitySetup.SetAttribute(3, SecuritySuite4)
+	assert.NoError(t, err)
+	val, err = securitySetup.GetAttribute(3)
+	assert.NoError(t, err)
+	assert.Equal(t, SecuritySuite4, val.(SecuritySuite))
+
 	// Verify client_system_title
 	val, err = securitySetup.GetAttribute(4)
 	assert.NoError(t, err)

@@ -59,6 +59,23 @@ func TestEncryptAndTag_DecryptAndVerify_Suite1(t *testing.T) {
 	assert.Equal(t, plaintext, decrypted)
 }
 
+func TestEncryptAndTag_DecryptAndVerify_Suite4(t *testing.T) {
+	key := []byte("0123456789ABCDEF0123456789ABCDEF")
+	plaintext := []byte("Hello, COSEM!")
+	serverSystemTitle := []byte("SERVER01")
+	header := &SecurityHeader{
+		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+		FrameCounter:    1,
+	}
+
+	ciphertext, err := EncryptAndTag(key, plaintext, serverSystemTitle, header, SecuritySuite4)
+	require.NoError(t, err)
+
+	decrypted, err := DecryptAndVerify(key, ciphertext, serverSystemTitle, header, SecuritySuite4, 0)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, decrypted)
+}
+
 func TestDecryptAndVerify_ReplayAttack(t *testing.T) {
 	key := []byte("0123456789ABCDEF")
 	plaintext := []byte("Hello, COSEM!")
@@ -73,6 +90,55 @@ func TestDecryptAndVerify_ReplayAttack(t *testing.T) {
 
 	_, err = DecryptAndVerify(key, ciphertext, serverSystemTitle, header, SecuritySuite0, 1)
 	assert.Equal(t, ErrReplayAttack, err)
+}
+
+func TestEncryptAndTag_InvalidKeyLength(t *testing.T) {
+	plaintext := []byte("Hello, COSEM!")
+	serverSystemTitle := []byte("SERVER01")
+	header := &SecurityHeader{
+		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+		FrameCounter:    1,
+	}
+
+	testCases := []struct {
+		name  string
+		suite SecuritySuite
+		key   []byte
+		match string
+	}{
+		{
+			name:  "suite0 wrong length",
+			suite: SecuritySuite0,
+			key:   []byte("0123456789ABCD"),
+			match: "suite 0",
+		},
+		{
+			name:  "suite4 wrong length",
+			suite: SecuritySuite4,
+			key:   []byte("0123456789ABCDEF"),
+			match: "suite 4",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EncryptAndTag(tc.key, plaintext, serverSystemTitle, header, tc.suite)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.match)
+		})
+	}
+}
+
+func TestDecryptAndVerify_InvalidKeyLength(t *testing.T) {
+	serverSystemTitle := []byte("SERVER01")
+	header := &SecurityHeader{
+		SecurityControl: SecurityControlAuthenticatedAndEncrypted,
+		FrameCounter:    1,
+	}
+
+	_, err := DecryptAndVerify([]byte("0123456789ABCDEF"), nil, serverSystemTitle, header, SecuritySuite4, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "suite 4")
 }
 
 func TestEncryptCBCandGMAC_TagVariesWithFrameCounter(t *testing.T) {

@@ -32,6 +32,7 @@ const (
 	SecuritySuite1 SecuritySuite = 1 // AES-128-CBC with GMAC
 	SecuritySuite2 SecuritySuite = 2 // AES-256-CBC with GMAC
 	SecuritySuite3 SecuritySuite = 3 // KUZN-CTR-CMAC
+	SecuritySuite4 SecuritySuite = 4 // VKO-256-GOST34102018-256 with Kuznyechik CTR-CMAC
 )
 
 // SecuritySetup represents the COSEM "Security setup" interface class.
