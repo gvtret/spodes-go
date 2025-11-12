@@ -265,14 +265,14 @@ func (dt DateTime) String() string {
 // The Length field specifies the number of valid bits, and unused bits in the last byte are padded with zeros.
 type BitString struct {
 	Bits   []byte // Byte sequence containing the bits.
-	Length uint8  // Number of valid bits (0-255).
+	Length uint32 // Number of valid bits.
 }
 
 // Validate ensures BitString fields are valid per IEC 62056-6-2.
-// Checks that Length is within 0-255 and the byte count matches ceiling(Length/8).
+// Checks that the byte count matches ceiling(Length/8).
 func (bs BitString) Validate() error {
-	expectedBytes := (bs.Length + 7) / 8
-	if len(bs.Bits) != int(expectedBytes) {
+	expectedBytes := int((bs.Length + 7) / 8)
+	if len(bs.Bits) != expectedBytes {
 		return fmt.Errorf("invalid bitstring data: %d bytes, expected %d for %d bits", len(bs.Bits), expectedBytes, bs.Length)
 	}
 	return nil
@@ -287,9 +287,6 @@ type BCD struct {
 // Validate ensures BCD fields are valid per IEC 62056-6-2.
 // Checks that the number of digits is 0-255 and each digit is 0-9.
 func (bcd BCD) Validate() error {
-	if len(bcd.Digits) > 255 {
-		return fmt.Errorf("invalid BCD length: %d, must be 0-255 digits", len(bcd.Digits))
-	}
 	for i, digit := range bcd.Digits {
 		if digit > 9 {
 			return fmt.Errorf("invalid BCD digit at index %d: %d, must be 0-9", i, digit)

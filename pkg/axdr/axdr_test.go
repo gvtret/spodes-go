@@ -318,6 +318,118 @@ func TestBitStringBCD(t *testing.T) {
 	}
 }
 
+// TestAXDRMultiByteLengths verifies that variable-length encodings handle lengths greater than 255.
+func TestAXDRMultiByteLengths(t *testing.T) {
+	expectedLengthBytes := []byte{0x82, 0x01, 0x2C} // 300 encoded using AXDR length encoding.
+
+	t.Run("OctetString300Bytes", func(t *testing.T) {
+		data := make([]byte, 300)
+		for i := range data {
+			data[i] = byte(i % 256)
+		}
+
+		encoded, err := Encode(data)
+		if err != nil {
+			t.Fatalf("Encode octet string failed: %v", err)
+		}
+		if len(encoded) < 4 {
+			t.Fatalf("encoded octet string too short: %x", encoded)
+		}
+		if !bytes.Equal(encoded[1:4], expectedLengthBytes) {
+			t.Fatalf("unexpected length encoding for octet string: %x", encoded[1:4])
+		}
+
+		decoded, err := Decode(encoded)
+		if err != nil {
+			t.Fatalf("Decode octet string failed: %v", err)
+		}
+		decodedBytes, ok := decoded.([]byte)
+		if !ok {
+			t.Fatalf("decoded octet string has unexpected type %T", decoded)
+		}
+		if !bytes.Equal(decodedBytes, data) {
+			t.Fatalf("decoded octet string mismatch")
+		}
+	})
+
+	t.Run("ArrayOver255Elements", func(t *testing.T) {
+		values := make(Array, 300)
+		for i := range values {
+			values[i] = uint8(i % 256)
+		}
+
+		encoded, err := Encode(values)
+		if err != nil {
+			t.Fatalf("Encode array failed: %v", err)
+		}
+		if len(encoded) < 4 {
+			t.Fatalf("encoded array too short: %x", encoded)
+		}
+		if !bytes.Equal(encoded[1:4], expectedLengthBytes) {
+			t.Fatalf("unexpected length encoding for array: %x", encoded[1:4])
+		}
+
+		decoded, err := Decode(encoded)
+		if err != nil {
+			t.Fatalf("Decode array failed: %v", err)
+		}
+		decodedArray, ok := decoded.(Array)
+		if !ok {
+			t.Fatalf("decoded array has unexpected type %T", decoded)
+		}
+		if len(decodedArray) != len(values) {
+			t.Fatalf("decoded array length mismatch: got %d want %d", len(decodedArray), len(values))
+		}
+		for i := range decodedArray {
+			if decodedArray[i] != values[i] {
+				t.Fatalf("decoded array element %d mismatch: got %v want %v", i, decodedArray[i], values[i])
+			}
+		}
+	})
+
+	t.Run("CompactArrayOver255Elements", func(t *testing.T) {
+		values := make([]interface{}, 300)
+		for i := range values {
+			values[i] = uint8(i % 256)
+		}
+		ca := CompactArray{TypeTag: TagUnsigned, Values: values}
+
+		encoded, err := Encode(ca)
+		if err != nil {
+			t.Fatalf("Encode compact array failed: %v", err)
+		}
+		if len(encoded) < 5 {
+			t.Fatalf("encoded compact array too short: %x", encoded)
+		}
+		if !bytes.Equal(encoded[1:4], expectedLengthBytes) {
+			t.Fatalf("unexpected length encoding for compact array: %x", encoded[1:4])
+		}
+		if encoded[4] != byte(TagUnsigned) {
+			t.Fatalf("unexpected compact array type tag: got 0x%02x want 0x%02x", encoded[4], byte(TagUnsigned))
+		}
+
+		decoded, err := Decode(encoded)
+		if err != nil {
+			t.Fatalf("Decode compact array failed: %v", err)
+		}
+		decodedCA, ok := decoded.(CompactArray)
+		if !ok {
+			t.Fatalf("decoded compact array has unexpected type %T", decoded)
+		}
+		if decodedCA.TypeTag != ca.TypeTag {
+			t.Fatalf("decoded compact array type tag mismatch: got %v want %v", decodedCA.TypeTag, ca.TypeTag)
+		}
+		if len(decodedCA.Values) != len(values) {
+			t.Fatalf("decoded compact array length mismatch: got %d want %d", len(decodedCA.Values), len(values))
+		}
+		for i := range decodedCA.Values {
+			if decodedCA.Values[i] != values[i] {
+				t.Fatalf("decoded compact array element %d mismatch: got %v want %v", i, decodedCA.Values[i], values[i])
+			}
+		}
+	})
+}
+
 // TestDateTimeTypes tests encoding and decoding of Date, Time, and DateTime types.
 func TestDateTimeTypes(t *testing.T) {
 	tests := []struct {
@@ -456,12 +568,6 @@ func TestComplexTypes(t *testing.T) {
 			input:    Array{int8(1), int8(2), int8(3)},
 			expected: []byte{0x01, 0x03, 0x1C, 0x01, 0x1C, 0x02, 0x1C, 0x03},
 		},
-		{
-			name:    "array_too_long",
-			input:   make([]interface{}, 256),
-			wantErr: true,
-		},
-
 		// Array (heterogeneous)
 		{
 			name: "array_mixed",
@@ -627,14 +733,6 @@ func TestErrorCases(t *testing.T) {
 		{
 			name:  "unsupported_type",
 			input: complex64(1 + 2i),
-		},
-		{
-			name:  "string_too_long",
-			input: string(make([]byte, 256)),
-		},
-		{
-			name:  "octet_string_too_long",
-			input: make([]byte, 256),
 		},
 		{
 			name:  "invalid_time",

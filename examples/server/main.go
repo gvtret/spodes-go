@@ -21,7 +21,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
 	}
-	defer logFile.Close()
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			log.Printf("Failed to close log file: %v", err)
+		}
+	}()
 	log.SetOutput(logFile)
 
 	listenAddr := "127.0.0.1:4059"
@@ -29,7 +33,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen on %s: %v", listenAddr, err)
 	}
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			log.Printf("Failed to close listener: %v", err)
+		}
+	}()
 	log.Printf("%s server listening on %s", *transport, listenAddr)
 
 	for {
@@ -51,7 +59,11 @@ func main() {
 }
 
 func handleHDLCConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("Failed to close connection: %v", err)
+		}
+	}()
 	log.Printf("Accepted HDLC connection from %s", conn.RemoteAddr())
 
 	config := hdlc.DefaultConfig()
@@ -59,7 +71,11 @@ func handleHDLCConnection(conn net.Conn) {
 	config.DestAddr = []byte{0x02} // Client address
 	hdlcConn := hdlc.NewHDLCConnection(config)
 
-	app := setupApplication(hdlcConn)
+	app, err := setupApplication(hdlcConn)
+	if err != nil {
+		log.Printf("Failed to set up application: %v", err)
+		return
+	}
 
 	go func() {
 		for {
@@ -102,16 +118,35 @@ func handleHDLCConnection(conn net.Conn) {
 			return
 		}
 		log.Printf("Server received raw data: %x", buf[:n])
-		hdlcConn.Receive(buf[:n])
+		responses, err := hdlcConn.Receive(buf[:n])
+		if err != nil {
+			log.Printf("Error handling HDLC data: %v", err)
+			return
+		}
+		for _, resp := range responses {
+			log.Printf("Server sending frame: %x", resp)
+			if _, err := conn.Write(resp); err != nil {
+				log.Printf("Error writing HDLC response: %v", err)
+				return
+			}
+		}
 	}
 }
 
 func handleWrapperConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("Failed to close connection: %v", err)
+		}
+	}()
 	log.Printf("Accepted WRAPPER connection from %s", conn.RemoteAddr())
 
 	wrapperConn := wrapper.NewConnection(conn, nil)
-	app := setupApplication(wrapperConn)
+	app, err := setupApplication(wrapperConn)
+	if err != nil {
+		log.Printf("Failed to set up application: %v", err)
+		return
+	}
 
 	go func() {
 		for {
@@ -152,11 +187,22 @@ func handleWrapperConnection(conn net.Conn) {
 			return
 		}
 		log.Printf("Server received raw data: %x", buf[:n])
-		wrapperConn.Receive(buf[:n])
+		responses, err := wrapperConn.Receive(buf[:n])
+		if err != nil {
+			log.Printf("Error handling WRAPPER data: %v", err)
+			return
+		}
+		for _, frame := range responses {
+			log.Printf("Server sending frame: %x", frame)
+			if _, err := conn.Write(frame); err != nil {
+				log.Printf("Error writing WRAPPER response: %v", err)
+				return
+			}
+		}
 	}
 }
 
-func setupApplication(tp transport.Transport) *cosem.Application {
+func setupApplication(tp transport.Transport) (*cosem.Application, error) {
 	// 1. Initialize SecuritySetup
 	obisSecurity, _ := cosem.NewObisCodeFromString("0.0.43.0.0.255")
 	securitySetup, _ := cosem.NewSecuritySetup(*obisSecurity, nil, nil, nil, nil, nil)
@@ -178,13 +224,17 @@ func setupApplication(tp transport.Transport) *cosem.Application {
 	addrPub, _ := cosem.NewObisCodeFromString("0.0.40.0.0.255")
 	assocPub, _ := cosem.NewAssociationLN(*addrPub)
 	app.AddAssociation("10", assocPub)
-	app.PopulateObjectList(assocPub, []cosem.ObisCode{*obisClock}) // Only clock is public
+	if err := app.PopulateObjectList(assocPub, []cosem.ObisCode{*obisClock}); err != nil {
+		return nil, err
+	} // Only clock is public
 
 	// Private/Admin Client (address 0x20)
 	addrPriv, _ := cosem.NewObisCodeFromString("0.0.40.0.1.255")
 	assocPriv, _ := cosem.NewAssociationLN(*addrPriv)
 	app.AddAssociation("20", assocPriv)
-	app.PopulateObjectList(assocPriv, []cosem.ObisCode{*obisClock, *obisData}) // Both objects are visible
+	if err := app.PopulateObjectList(assocPriv, []cosem.ObisCode{*obisClock, *obisData}); err != nil {
+		return nil, err
+	} // Both objects are visible
 
-	return app
+	return app, nil
 }

@@ -36,7 +36,7 @@ func ECDH(priv *ecdsa.PrivateKey, pub *ecdsa.PublicKey) ([]byte, error) {
 	if pub == nil {
 		return nil, ErrInvalidPublicKey
 	}
-	x, _ := pub.Curve.ScalarMult(pub.X, pub.Y, priv.D.Bytes())
+	x, _ := pub.ScalarMult(pub.X, pub.Y, priv.D.Bytes())
 	if x == nil {
 		return nil, ErrKeyAgreementFailed
 	}
@@ -73,14 +73,47 @@ func MarshalPublicKey(pub *ecdsa.PublicKey) ([]byte, error) {
 	if pub == nil {
 		return nil, ErrInvalidPublicKey
 	}
-	return elliptic.Marshal(pub.Curve, pub.X, pub.Y), nil
+	if pub.X == nil || pub.Y == nil || pub.Curve == nil {
+		return nil, ErrInvalidPublicKey
+	}
+
+	params := pub.Params()
+	if params == nil {
+		return nil, ErrInvalidPublicKey
+	}
+
+	coordinateSize := (params.BitSize + 7) / 8
+	encoded := make([]byte, 1+2*coordinateSize)
+	encoded[0] = 0x04
+
+	xBytes := pub.X.Bytes()
+	yBytes := pub.Y.Bytes()
+
+	if len(xBytes) > coordinateSize || len(yBytes) > coordinateSize {
+		return nil, ErrInvalidPublicKey
+	}
+
+	copy(encoded[1+coordinateSize-len(xBytes):1+coordinateSize], xBytes)
+	copy(encoded[1+2*coordinateSize-len(yBytes):], yBytes)
+
+	return encoded, nil
 }
 
 // UnmarshalPublicKey unmarshals a byte slice into a public key.
 func UnmarshalPublicKey(data []byte) (*ecdsa.PublicKey, error) {
-	x, y := elliptic.Unmarshal(elliptic.P256(), data)
-	if x == nil {
+	curve := elliptic.P256()
+	params := curve.Params()
+	coordinateSize := (params.BitSize + 7) / 8
+	expectedLen := 1 + 2*coordinateSize
+
+	if len(data) != expectedLen || len(data) == 0 || data[0] != 0x04 {
 		return nil, ErrInvalidPublicKey
 	}
-	return &ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, nil
+
+	x := new(big.Int).SetBytes(data[1 : 1+coordinateSize])
+	y := new(big.Int).SetBytes(data[1+coordinateSize:])
+	if !curve.IsOnCurve(x, y) {
+		return nil, ErrInvalidPublicKey
+	}
+	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
 }

@@ -118,17 +118,23 @@ func EncodeFrame(da, sa []byte, control byte, info []byte, segmented bool) ([]by
 		// We need to build a temporary buffer for this
 		var headerForHCS bytes.Buffer
 		tempFormat := uint16(0xA<<12) | uint16(payloadLength&0x7FF)
-		binary.Write(&headerForHCS, binary.BigEndian, tempFormat)
+		if err := binary.Write(&headerForHCS, binary.BigEndian, tempFormat); err != nil {
+			return nil, err
+		}
 		headerForHCS.Write(payload.Bytes())
 		hcs := calculateCRC16(headerForHCS.Bytes())
-		binary.Write(&payload, binary.BigEndian, hcs)
+		if err := binary.Write(&payload, binary.BigEndian, hcs); err != nil {
+			return nil, err
+		}
 		payload.Write(info)
 	}
 
 	// Now build the full frame body (Format + Payload) for the FCS calculation
 	var frameBody bytes.Buffer
 	format := uint16(0xA<<12) | uint16(payloadLength&0x7FF)
-	binary.Write(&frameBody, binary.BigEndian, format)
+	if err := binary.Write(&frameBody, binary.BigEndian, format); err != nil {
+		return nil, err
+	}
 	frameBody.Write(payload.Bytes())
 
 	fcs := calculateCRC16(frameBody.Bytes())
@@ -137,7 +143,9 @@ func EncodeFrame(da, sa []byte, control byte, info []byte, segmented bool) ([]by
 	var finalFrame bytes.Buffer
 	finalFrame.WriteByte(FlagByte)
 	finalFrame.Write(frameBody.Bytes())
-	binary.Write(&finalFrame, binary.BigEndian, fcs) // Append FCS
+	if err := binary.Write(&finalFrame, binary.BigEndian, fcs); err != nil {
+		return nil, err
+	} // Append FCS
 	finalFrame.WriteByte(FlagByte)
 
 	return finalFrame.Bytes(), nil

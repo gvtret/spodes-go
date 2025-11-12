@@ -21,10 +21,9 @@ func encodeCompactArray(buf *bytes.Buffer, ca CompactArray) error {
 	buf.WriteByte(byte(TagCompactArray))
 	// Write length (number of elements).
 	length := len(ca.Values)
-	if length > 255 {
-		return fmt.Errorf("compact array length %d exceeds maximum of 255", length)
+	if err := writeAXDRLength(buf, length); err != nil {
+		return fmt.Errorf("failed to write compact array length: %w", err)
 	}
-	buf.WriteByte(byte(length))
 	// Write the single type tag for all elements.
 	buf.WriteByte(byte(ca.TypeTag))
 	// Encode each element using range loop for idiomatic Go.
@@ -46,9 +45,9 @@ func encodeCompactArray(buf *bytes.Buffer, ca CompactArray) error {
 // Returns a CompactArray struct or an error if decoding fails or the type tag is unsupported.
 func decodeCompactArray(reader *bytes.Reader) (interface{}, error) {
 	// Read length.
-	length, err := reader.ReadByte()
+	length, err := readAXDRLength(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read compact array length: %v", err)
+		return nil, fmt.Errorf("failed to read compact array length: %w", err)
 	}
 	// Read type tag for all elements.
 	typeTag, err := reader.ReadByte()
@@ -57,7 +56,7 @@ func decodeCompactArray(reader *bytes.Reader) (interface{}, error) {
 	}
 	// Decode each element based on the type tag.
 	values := make([]interface{}, length)
-	for i := 0; i < int(length); i++ {
+	for i := 0; i < length; i++ {
 		var val interface{}
 		switch Tag(typeTag) {
 		case TagBoolean:

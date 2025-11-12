@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEncryptAndTag_DecryptAndVerify_Suite0(t *testing.T) {
@@ -76,23 +77,29 @@ func TestDecryptAndVerify_ReplayAttack(t *testing.T) {
 func TestApplication_HandleAPDU_Secured(t *testing.T) {
 	obisAssociationLN, _ := NewObisCodeFromString("0.0.40.0.0.255")
 	associationLN, _ := NewAssociationLN(*obisAssociationLN)
-	obisSecurity, _ := NewObisCodeFromString("0.0.43.0.0.255")
+	obisSecurity, err := NewObisCodeFromString("0.0.43.0.0.255")
+	require.NoError(t, err)
 	clientSystemTitle := []byte("CLIENT")
 	serverSystemTitle := []byte("SERVER01")
 	masterKey := []byte("master_key")
 	guek := []byte("0123456789ABCDEF")
 	gak := []byte("0123456789ABCDEF")
-	securitySetup, _ := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
+	securitySetup, err := NewSecuritySetup(*obisSecurity, clientSystemTitle, serverSystemTitle, masterKey, guek, gak)
+	require.NoError(t, err)
 	app := NewApplication(nil, securitySetup)
-	app.securitySetup.SetAttribute(3, SecuritySuite1)
+	err = app.securitySetup.SetAttribute(3, SecuritySuite1)
+	require.NoError(t, err)
 
 	clientAddr := mockAddr("client1")
 	app.AddAssociation(clientAddr.String(), associationLN)
 
-	obis, _ := NewObisCodeFromString("1.0.0.3.0.255")
-	dataObj, _ := NewData(*obis, uint32(12345))
+	obis, err := NewObisCodeFromString("1.0.0.3.0.255")
+	require.NoError(t, err)
+	dataObj, err := NewData(*obis, uint32(12345))
+	require.NoError(t, err)
 	app.RegisterObject(dataObj)
-	app.PopulateObjectList(associationLN, []ObisCode{*obis})
+	err = app.PopulateObjectList(associationLN, []ObisCode{*obis})
+	require.NoError(t, err)
 
 	req := &GetRequest{
 		Type:                GET_REQUEST_NORMAL,
