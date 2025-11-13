@@ -14,7 +14,7 @@ func newTestProfileGeneric(t *testing.T) *ProfileGeneric {
 		t.Fatalf("failed to create obis code: %v", err)
 	}
 
-	pg, err := NewProfileGeneric(*obis, []byte{}, []CaptureObjectDefinition{}, 60, 0, CosemAttributeDescriptor{})
+	pg, err := NewProfileGeneric(*obis, [][]byte{}, []CaptureObjectDefinition{}, 60, 0, CosemAttributeDescriptor{})
 	if err != nil {
 		t.Fatalf("failed to create profile generic: %v", err)
 	}
@@ -128,5 +128,88 @@ func TestProfileGenericSetAttributeSortObject(t *testing.T) {
 
 	if got := value.(CosemAttributeDescriptor); !reflect.DeepEqual(got, validSortObject) {
 		t.Fatalf("sort object changed after invalid update: got %+v, want %+v", got, validSortObject)
+	}
+}
+
+func TestProfileGenericResetMethod(t *testing.T) {
+	pg := newTestProfileGeneric(t)
+
+	first := []byte{0x01}
+	second := []byte{0x02}
+
+	if _, err := pg.Invoke(2, []interface{}{first}); err != nil {
+		t.Fatalf("capture invocation failed: %v", err)
+	}
+	if _, err := pg.Invoke(2, []interface{}{second}); err != nil {
+		t.Fatalf("capture invocation failed: %v", err)
+	}
+
+	if _, err := pg.Invoke(1, nil); err != nil {
+		t.Fatalf("reset invocation failed: %v", err)
+	}
+
+	bufferValue, err := pg.GetAttribute(2)
+	if err != nil {
+		t.Fatalf("failed to get buffer: %v", err)
+	}
+	records := bufferValue.([][]byte)
+	if len(records) != 0 {
+		t.Fatalf("expected empty buffer after reset, got %d records", len(records))
+	}
+
+	entriesValue, err := pg.GetAttribute(7)
+	if err != nil {
+		t.Fatalf("failed to get entries_in_use: %v", err)
+	}
+	if entries := entriesValue.(uint32); entries != 0 {
+		t.Fatalf("expected entries_in_use to be 0 after reset, got %d", entries)
+	}
+
+	if _, err := pg.Invoke(1, []interface{}{uint8(1)}); !errors.Is(err, ErrInvalidParameter) {
+		t.Fatalf("expected invalid parameter error for reset with arguments, got %v", err)
+	}
+}
+
+func TestProfileGenericCaptureMethod(t *testing.T) {
+	pg := newTestProfileGeneric(t)
+
+	first := []byte{0x01, 0x02}
+	second := []byte{0x03, 0x04}
+
+	if _, err := pg.Invoke(2, []interface{}{first}); err != nil {
+		t.Fatalf("capture invocation failed: %v", err)
+	}
+	if _, err := pg.Invoke(2, []interface{}{second}); err != nil {
+		t.Fatalf("capture invocation failed: %v", err)
+	}
+
+	bufferValue, err := pg.GetAttribute(2)
+	if err != nil {
+		t.Fatalf("failed to get buffer: %v", err)
+	}
+	records := bufferValue.([][]byte)
+	if len(records) != 2 {
+		t.Fatalf("unexpected number of records, got %d want 2", len(records))
+	}
+	if got, want := records[0], first; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected first record: got %v want %v", got, want)
+	}
+	if got, want := records[1], second; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected second record: got %v want %v", got, want)
+	}
+
+	entriesValue, err := pg.GetAttribute(7)
+	if err != nil {
+		t.Fatalf("failed to get entries_in_use: %v", err)
+	}
+	if entries := entriesValue.(uint32); entries != 2 {
+		t.Fatalf("unexpected entries_in_use value: got %d want 2", entries)
+	}
+
+	if _, err := pg.Invoke(2, nil); !errors.Is(err, ErrInvalidParameter) {
+		t.Fatalf("expected invalid parameter error for capture without arguments, got %v", err)
+	}
+	if _, err := pg.Invoke(2, []interface{}{uint32(5)}); !errors.Is(err, ErrInvalidParameter) {
+		t.Fatalf("expected invalid parameter error for capture with wrong argument type, got %v", err)
 	}
 }
