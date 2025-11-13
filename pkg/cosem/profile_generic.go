@@ -1,8 +1,47 @@
 package cosem
 
 import (
+	"fmt"
 	"reflect"
 )
+
+func validateCapturePeriod(value interface{}) error {
+	capturePeriod := value.(uint32)
+	if capturePeriod == 0 {
+		return fmt.Errorf("%w: capture_period must be greater than 0", ErrInvalidParameter)
+	}
+	return nil
+}
+
+func validateSortMethod(value interface{}) error {
+	sortMethod := value.(uint8)
+	switch sortMethod {
+	case 0, 1, 2, 3, 4, 5:
+		return nil
+	default:
+		return fmt.Errorf("%w: sort_method value %d is not supported", ErrInvalidParameter, sortMethod)
+	}
+}
+
+func validateSortObject(value interface{}) error {
+	sortObject := value.(CosemAttributeDescriptor)
+
+	if sortObject.ClassID == 0 && sortObject.AttributeID == 0 && sortObject.InstanceID.String() == "" {
+		return nil
+	}
+
+	if sortObject.ClassID == 0 {
+		return fmt.Errorf("%w: sort_object class_id must be set", ErrInvalidParameter)
+	}
+	if sortObject.AttributeID <= 0 {
+		return fmt.Errorf("%w: sort_object attribute_id must be positive", ErrInvalidParameter)
+	}
+	if sortObject.InstanceID.String() == "" {
+		return fmt.Errorf("%w: sort_object instance_id must be set", ErrInvalidParameter)
+	}
+
+	return nil
+}
 
 // ProfileGenericClassID is the class ID for the "Profile generic" interface class.
 const ProfileGenericClassID uint16 = 7
@@ -42,19 +81,22 @@ func NewProfileGeneric(obis ObisCode, buffer interface{}, captureObjects []Captu
 			Value:  captureObjects,
 		},
 		4: { // capture_period
-			Type:   reflect.TypeOf(capturePeriod),
-			Access: AttributeRead,
-			Value:  capturePeriod,
+			Type:      reflect.TypeOf(capturePeriod),
+			Access:    AttributeRead | AttributeWrite,
+			Value:     capturePeriod,
+			Validator: validateCapturePeriod,
 		},
 		5: { // sort_method
-			Type:   reflect.TypeOf(sortMethod),
-			Access: AttributeRead,
-			Value:  sortMethod,
+			Type:      reflect.TypeOf(sortMethod),
+			Access:    AttributeRead | AttributeWrite,
+			Value:     sortMethod,
+			Validator: validateSortMethod,
 		},
 		6: { // sort_object
-			Type:   reflect.TypeOf(sortObject),
-			Access: AttributeRead,
-			Value:  sortObject,
+			Type:      reflect.TypeOf(sortObject),
+			Access:    AttributeRead | AttributeWrite,
+			Value:     sortObject,
+			Validator: validateSortObject,
 		},
 		7: { // entries_in_use
 			Type:   reflect.TypeOf(uint32(0)),
