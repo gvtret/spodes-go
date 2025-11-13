@@ -31,9 +31,10 @@ const (
 
 // AttributeDescriptor - define COSEM object attribute
 type AttributeDescriptor struct {
-	Type   reflect.Type
-	Access AttributeAccess
-	Value  interface{}
+	Type      reflect.Type
+	Access    AttributeAccess
+	Value     interface{}
+	Validator func(value interface{}) error
 }
 
 // MethodAccess - describe access level for COSEM object method.
@@ -196,6 +197,12 @@ func (b *BaseImpl) SetAttribute(attributeID byte, value interface{}) error {
 	}
 	if reflect.TypeOf(value) != attr.Type {
 		return ErrInvalidValueType
+	}
+
+	if attr.Validator != nil {
+		if err := attr.Validator(value); err != nil {
+			return err
+		}
 	}
 	attr.Value = value
 	b.Attributes[attributeID] = attr
