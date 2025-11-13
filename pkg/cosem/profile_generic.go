@@ -110,14 +110,88 @@ func NewProfileGeneric(obis ObisCode, buffer interface{}, captureObjects []Captu
 		},
 	}
 
-	methods := map[byte]MethodDescriptor{}
+	var captureParamType reflect.Type
+	if attributes[2].Type.Kind() == reflect.Slice {
+		captureParamType = attributes[2].Type.Elem()
+	} else {
+		captureParamType = reflect.TypeOf((*interface{})(nil)).Elem()
+	}
 
-	return &ProfileGeneric{
-		BaseImpl: BaseImpl{
-			ClassID:    ProfileGenericClassID,
-			InstanceID: obis,
-			Attributes: attributes,
-			Methods:    methods,
-		},
-	}, nil
+	methods := make(map[byte]MethodDescriptor)
+
+	pg := &ProfileGeneric{}
+	pg.BaseImpl = BaseImpl{
+		ClassID:    ProfileGenericClassID,
+		InstanceID: obis,
+		Attributes: attributes,
+		Methods:    methods,
+	}
+
+	methods[1] = MethodDescriptor{ // reset
+		Access:  MethodAccessAllowed,
+		Handler: pg.reset,
+	}
+	methods[2] = MethodDescriptor{ // capture
+		Access:     MethodAccessAllowed,
+		ParamTypes: []reflect.Type{captureParamType},
+		Handler:    pg.capture,
+	}
+
+	return pg, nil
+}
+
+func (pg *ProfileGeneric) reset(_ []interface{}) (interface{}, error) {
+	bufferAttr, ok := pg.Attributes[2]
+	if !ok {
+		return nil, ErrAttributeNotSupported
+	}
+
+	if bufferAttr.Type.Kind() == reflect.Slice {
+		bufferAttr.Value = reflect.MakeSlice(bufferAttr.Type, 0, 0).Interface()
+	} else {
+		bufferAttr.Value = reflect.Zero(bufferAttr.Type).Interface()
+	}
+	pg.Attributes[2] = bufferAttr
+
+	entriesAttr, ok := pg.Attributes[7]
+	if !ok {
+		return nil, ErrAttributeNotSupported
+	}
+	entriesAttr.Value = uint32(0)
+	pg.Attributes[7] = entriesAttr
+
+	return nil, nil
+}
+
+func (pg *ProfileGeneric) capture(params []interface{}) (interface{}, error) {
+	bufferAttr, ok := pg.Attributes[2]
+	if !ok {
+		return nil, ErrAttributeNotSupported
+	}
+	if bufferAttr.Type.Kind() != reflect.Slice {
+		return nil, ErrInvalidValueType
+	}
+
+	bufferVal := reflect.ValueOf(bufferAttr.Value)
+	if !bufferVal.IsValid() || bufferVal.Kind() != reflect.Slice || bufferVal.IsNil() {
+		bufferVal = reflect.MakeSlice(bufferAttr.Type, 0, 0)
+	}
+
+	newElem := reflect.ValueOf(params[0])
+	if !newElem.Type().AssignableTo(bufferAttr.Type.Elem()) {
+		return nil, ErrInvalidParameter
+	}
+
+	bufferVal = reflect.Append(bufferVal, newElem)
+	bufferAttr.Value = bufferVal.Interface()
+	pg.Attributes[2] = bufferAttr
+
+	entriesAttr, ok := pg.Attributes[7]
+	if !ok {
+		return nil, ErrAttributeNotSupported
+	}
+	entriesAttr.Value = uint32(bufferVal.Len())
+	pg.Attributes[7] = entriesAttr
+
+	return nil, nil
 }
